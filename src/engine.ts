@@ -36,10 +36,15 @@ export type Trade = {
   quantity: number;
   buyerOrderId: number;
   sellerOrderId: number;
+  buyerOwner: Owner;
+  sellerOwner: Owner;
   /** Side of the incoming order that caused the trade (who "crossed the spread"). */
   aggressor: Side;
   timestamp: number;
 };
+
+/** The user's simulated account: shares held (negative = short) and cash. */
+export type Portfolio = { shares: number; cash: number };
 
 export type Fill = {
   restingOrderId: number;
@@ -64,6 +69,8 @@ export type ExecutionReport = {
   owner: Owner;
   quantity: number;
   limitPrice?: number;
+  /** Best opposite price when the order arrived (used to explain slippage). */
+  bestOppositePrice: number | null;
   fills: Fill[];
   filledQuantity: number;
   averagePrice: number | null;
@@ -92,11 +99,13 @@ export type EngineState = {
   clock: number;
   /** Newest first. */
   activity: ActivityEvent[];
+  portfolio: Portfolio;
 };
 
 export const TICK_SIZE = 0.01;
 export const MAX_QUANTITY = 1_000_000;
 export const MAX_HISTORY = 200;
+export const STARTING_CASH = 10_000;
 
 /** Round a price to the nearest tick ($0.01) without floating-point drift. */
 export function roundToTick(price: number): number {
@@ -146,6 +155,7 @@ export function createInitialState(): EngineState {
     nextTradeId: 1,
     clock: orders.length + 1,
     activity: [],
+    portfolio: { shares: 0, cash: STARTING_CASH },
   };
 }
 
@@ -195,6 +205,7 @@ export function executeOrder(
   // The opposite side of the book, sorted best price first, then earliest first.
   const opposite = side === 'buy' ? asks : bids;
   opposite.sort(side === 'buy' ? compareAsks : compareBids);
+  const bestOppositePrice = opposite[0]?.price ?? null;
 
   const fills: Fill[] = [];
   const newTrades: Trade[] = [];
@@ -217,6 +228,8 @@ export function executeOrder(
       quantity: fillQty,
       buyerOrderId: side === 'buy' ? incoming.id : resting.id,
       sellerOrderId: side === 'sell' ? incoming.id : resting.id,
+      buyerOwner: side === 'buy' ? owner : resting.owner,
+      sellerOwner: side === 'sell' ? owner : resting.owner,
       aggressor: side,
       timestamp,
     });
@@ -239,6 +252,14 @@ export function executeOrder(
     }
   }
 
+  // Update the user's account for every trade they are on (either side).
+  let { shares, cash } = state.portfolio;
+  for (const t of newTrades) {
+    if (t.buyerOwner === 'you') { shares += t.quantity; cash -= t.price * t.quantity; }
+    if (t.sellerOwner === 'you') { shares -= t.quantity; cash += t.price * t.quantity; }
+  }
+  cash = Math.round(cash * 100) / 100;
+
   const notional = fills.reduce((sum, f) => sum + f.price * f.quantity, 0);
   const averagePrice = filledQuantity > 0 ? Math.round((notional / filledQuantity) * 10000) / 10000 : null;
 
@@ -254,6 +275,7 @@ export function executeOrder(
     owner,
     quantity,
     limitPrice: price,
+    bestOppositePrice,
     fills,
     filledQuantity,
     averagePrice,
@@ -274,6 +296,7 @@ export function executeOrder(
       nextTradeId,
       clock: state.clock + 1,
       activity: [{ kind: 'order' as const, report }, ...state.activity].slice(0, MAX_HISTORY),
+      portfolio: { shares, cash },
     },
     report,
   };
@@ -349,4 +372,16 @@ export function queuePositions(orders: Order[]): Map<number, { position: number;
     level.forEach((o, i) => result.set(o.id, { position: i + 1, levelSize: level.length }));
   }
   return result;
+}
+
+/** Mark-to-market value of the user's account at the last trade price. */
+export function portfolioValue(state: EngineState): number {
+  return Math.round((state.portfolio.cash + state.portfolio.shares * state.lastPrice) * 100) / 100;
+}
+
+/** Build a state from a list of resting limit orders (oldest first). Used by lessons. */
+export function stateFromBook(book: Array<[Side, number, number]>, lastPrice = 100): EngineState {
+  let s: EngineState = { ...createInitialState(), bids: [], asks: [], nextOrderId: 1, clock: 1, lastPrice, openPrice: lastPrice };
+  for (const [side, price, quantity] of book) s = submitOrder(s, side, 'limit', quantity, price, 'market');
+  return { ...s, trades: [], activity: [] };
 }

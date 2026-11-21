@@ -8,6 +8,7 @@ import {
   previewOrder,
   queuePositions,
   spread,
+  stateFromBook,
   submitOrder,
   validateOrder,
   type EngineState,
@@ -183,6 +184,37 @@ describe('book integrity', () => {
   it('lists the newest trade first', () => {
     const s = submitOrder(createInitialState(), 'buy', 'market', 25);
     expect(s.trades.map(t => t.price)).toEqual([100.2, 100.1]);
+  });
+});
+
+describe('portfolio', () => {
+  it('tracks shares and cash for the user, and ignores market participants', () => {
+    let s = submitOrder(createInitialState(), 'buy', 'market', 25); // 10 @ 100.10 + 15 @ 100.20
+    expect(s.portfolio.shares).toBe(25);
+    expect(s.portfolio.cash).toBeCloseTo(10_000 - 2504, 6);
+    s = submitOrder(s, 'sell', 'market', 5, undefined, 'market');
+    expect(s.portfolio.shares).toBe(25);
+  });
+
+  it('credits the user when their resting order is hit by someone else', () => {
+    let s = submitOrder(createInitialState(), 'sell', 'limit', 10, 100.05);
+    s = submitOrder(s, 'buy', 'market', 4, undefined, 'market');
+    expect(s.portfolio).toEqual({ shares: -4, cash: 10_000 + 400.2 });
+  });
+});
+
+describe('stateFromBook', () => {
+  it('builds a clean, correctly sorted book', () => {
+    const s = stateFromBook([
+      ['sell', 10.2, 5],
+      ['sell', 10.1, 5],
+      ['buy', 9.9, 5],
+      ['buy', 10, 5],
+    ]);
+    expect(s.asks.map(o => o.price)).toEqual([10.1, 10.2]);
+    expect(s.bids.map(o => o.price)).toEqual([10, 9.9]);
+    expect(s.trades).toHaveLength(0);
+    expect(s.activity).toHaveLength(0);
   });
 });
 
