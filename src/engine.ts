@@ -4,6 +4,8 @@
 //   1. Price priority: a better price always trades first
 //      (highest bid / lowest ask).
 //   2. Time priority: at the same price, the order that arrived first trades first (FIFO).
+//      (Switchable: under the PRO-RATA rule, orders at the same price share the fill
+//      in proportion to their size instead.)
 //   3. Trades execute at the RESTING order's price — the incoming (aggressive) order
 //      may get price improvement, never a worse price than its limit.
 //   4. Market orders are immediate-or-cancel: whatever cannot fill right now is cancelled.
@@ -16,6 +18,8 @@ export type Side = 'buy' | 'sell';
 export type OrderType = 'limit' | 'market';
 /** Who placed the order: the user, or the simulated market participants. */
 export type Owner = 'you' | 'market';
+/** How shares are shared out among resting orders at the same price. */
+export type MatchingRule = 'price-time' | 'pro-rata';
 
 export type Order = {
   id: number;
@@ -67,6 +71,7 @@ export type ExecutionReport = {
   side: Side;
   type: OrderType;
   owner: Owner;
+  rule: MatchingRule;
   quantity: number;
   limitPrice?: number;
   /** Best opposite price when the order arrived (used to explain slippage). */
@@ -100,6 +105,7 @@ export type EngineState = {
   /** Newest first. */
   activity: ActivityEvent[];
   portfolio: Portfolio;
+  rule: MatchingRule;
 };
 
 export const TICK_SIZE = 0.01;
@@ -156,6 +162,7 @@ export function createInitialState(): EngineState {
     clock: orders.length + 1,
     activity: [],
     portfolio: { shares: 0, cash: STARTING_CASH },
+    rule: 'price-time',
   };
 }
 
@@ -178,6 +185,39 @@ function crosses(side: Side, type: OrderType, limitPrice: number | undefined, re
   if (type === 'market') return true;
   const restingPrice = resting.price as number;
   return side === 'buy' ? (limitPrice as number) >= restingPrice : (limitPrice as number) <= restingPrice;
+}
+
+/**
+ * PRICE-TIME (FIFO), used by most stock exchanges such as NASDAQ:
+ * the first order in the queue is filled completely before the next one gets anything.
+ * `level` is in arrival order; returns shares for each order.
+ */
+export function allocatePriceTime(level: Order[], take: number): number[] {
+  let left = take;
+  return level.map(o => {
+    const q = Math.min(o.remaining, left);
+    left -= q;
+    return q;
+  });
+}
+
+/**
+ * PRO-RATA, used for some futures (e.g. parts of CME):
+ * shares are split in proportion to each order's size, so a big order gets more
+ * no matter when it arrived. Rounding leftovers (whole shares) go one at a time
+ * to the earliest orders that can still take them.
+ */
+export function allocateProRata(level: Order[], take: number): number[] {
+  const total = level.reduce((sum, o) => sum + o.remaining, 0);
+  const result = level.map(o => Math.floor((take * o.remaining) / total));
+  let left = take - result.reduce((a, b) => a + b, 0);
+  for (let i = 0; left > 0; i = (i + 1) % level.length) {
+    if (result[i] < level[i].remaining) {
+      result[i]++;
+      left--;
+    }
+  }
+  return result;
 }
 
 /**
@@ -212,29 +252,41 @@ export function executeOrder(
   let nextTradeId = state.nextTradeId;
   let lastPrice = state.lastPrice;
 
+  // Match one price level at a time, best price first (price priority).
   while (incoming.remaining > 0 && opposite.length > 0) {
-    const resting = opposite[0];
-    if (!crosses(side, type, price, resting)) break;
+    if (!crosses(side, type, price, opposite[0])) break;
 
-    const fillQty = Math.min(incoming.remaining, resting.remaining);
-    const fillPrice = resting.price as number; // trade at the resting order's price
-    incoming.remaining -= fillQty;
-    resting.remaining -= fillQty;
+    // Every resting order at the best price, already in arrival order.
+    const levelPrice = opposite[0].price as number;
+    const level = opposite.filter(o => o.price === levelPrice);
+    const take = Math.min(incoming.remaining, level.reduce((sum, o) => sum + o.remaining, 0));
 
-    fills.push({ restingOrderId: resting.id, restingOwner: resting.owner, price: fillPrice, quantity: fillQty, restingRemaining: resting.remaining });
-    newTrades.push({
-      id: nextTradeId++,
-      price: fillPrice,
-      quantity: fillQty,
-      buyerOrderId: side === 'buy' ? incoming.id : resting.id,
-      sellerOrderId: side === 'sell' ? incoming.id : resting.id,
-      buyerOwner: side === 'buy' ? owner : resting.owner,
-      sellerOwner: side === 'sell' ? owner : resting.owner,
-      aggressor: side,
-      timestamp,
+    // Decide how many shares each resting order at this price gets.
+    const allocations = state.rule === 'pro-rata' ? allocateProRata(level, take) : allocatePriceTime(level, take);
+
+    level.forEach((resting, i) => {
+      const fillQty = allocations[i];
+      if (fillQty === 0) return;
+      incoming.remaining -= fillQty;
+      resting.remaining -= fillQty;
+      // Trade at the resting order's price.
+      fills.push({ restingOrderId: resting.id, restingOwner: resting.owner, price: levelPrice, quantity: fillQty, restingRemaining: resting.remaining });
+      newTrades.push({
+        id: nextTradeId++,
+        price: levelPrice,
+        quantity: fillQty,
+        buyerOrderId: side === 'buy' ? incoming.id : resting.id,
+        sellerOrderId: side === 'sell' ? incoming.id : resting.id,
+        buyerOwner: side === 'buy' ? owner : resting.owner,
+        sellerOwner: side === 'sell' ? owner : resting.owner,
+        aggressor: side,
+        timestamp,
+      });
     });
-    lastPrice = fillPrice;
-    if (resting.remaining === 0) opposite.shift();
+    lastPrice = levelPrice;
+
+    // Remove fully filled orders; partly filled ones keep their place in the queue.
+    for (let i = opposite.length - 1; i >= 0; i--) if (opposite[i].remaining === 0) opposite.splice(i, 1);
   }
 
   const filledQuantity = quantity - incoming.remaining;
@@ -273,6 +325,7 @@ export function executeOrder(
     side,
     type,
     owner,
+    rule: state.rule,
     quantity,
     limitPrice: price,
     bestOppositePrice,
@@ -318,6 +371,11 @@ export function submitOrder(
 export function previewOrder(state: EngineState, side: Side, type: OrderType, quantity: number, limitPrice?: number): ExecutionReport | null {
   if (validateOrder(type, quantity, limitPrice)) return null;
   return executeOrder(state, side, type, quantity, limitPrice).report;
+}
+
+/** Switch the matching rule. Resting orders keep their places. */
+export function setRule(state: EngineState, rule: MatchingRule): EngineState {
+  return { ...state, rule };
 }
 
 export function cancelOrder(state: EngineState, id: number): EngineState {

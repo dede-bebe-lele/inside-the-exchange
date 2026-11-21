@@ -7,7 +7,9 @@ import {
   executeOrder,
   previewOrder,
   queuePositions,
+  setRule,
   spread,
+  allocateProRata,
   stateFromBook,
   submitOrder,
   validateOrder,
@@ -247,5 +249,52 @@ describe('validation', () => {
     expect(previewOrder(s, 'buy', 'market', 0)).toBeNull();
     expect(previewOrder(s, 'buy', 'market', 15)?.fills).toHaveLength(2);
     expect(s.asks[0].remaining).toBe(10);
+  });
+});
+
+describe('pro-rata matching rule', () => {
+  const book = () =>
+    stateFromBook([
+      ['sell', 100.1, 10], // A: first in line, small
+      ['sell', 100.1, 90], // B: later, big
+      ['buy', 100, 50],
+    ]);
+
+  it('price-time gives the first order everything it can take', () => {
+    const { report } = executeOrder(book(), 'buy', 'market', 50);
+    expect(report.fills.map(f => f.quantity)).toEqual([10, 40]);
+  });
+
+  it('pro-rata splits by size, regardless of arrival time', () => {
+    const { report } = executeOrder(setRule(book(), 'pro-rata'), 'buy', 'market', 50);
+    expect(report.rule).toBe('pro-rata');
+    expect(report.fills.map(f => f.quantity)).toEqual([5, 45]);
+  });
+
+  it('hands rounding leftovers to the earliest orders, one share each', () => {
+    const level = [1, 1, 1].map((q, i) => ({ id: i + 1, side: 'sell' as const, type: 'limit' as const, price: 10, quantity: q, remaining: q, timestamp: i, owner: 'market' as const }));
+    expect(allocateProRata(level, 2)).toEqual([1, 1, 0]);
+  });
+
+  it('always allocates exactly the shares taken, never more than an order has', () => {
+    let seed = 7;
+    const rand = () => (seed = (seed * 48271) % 2147483647) / 2147483647;
+    for (let n = 0; n < 500; n++) {
+      const sizes = Array.from({ length: 1 + Math.floor(rand() * 6) }, () => 1 + Math.floor(rand() * 100));
+      const level = sizes.map((q, i) => ({ id: i, side: 'sell' as const, type: 'limit' as const, price: 1, quantity: q, remaining: q, timestamp: i, owner: 'market' as const }));
+      const total = sizes.reduce((a, b) => a + b, 0);
+      const take = 1 + Math.floor(rand() * total);
+      const alloc = allocateProRata(level, take);
+      expect(alloc.reduce((a, b) => a + b, 0)).toBe(take);
+      alloc.forEach((a, i) => expect(a).toBeLessThanOrEqual(sizes[i]));
+    }
+  });
+
+  it('still respects price priority across levels', () => {
+    let s = setRule(book(), 'pro-rata');
+    s = submitOrder(s, 'sell', 'limit', 5, 100.05, 'market'); // better price, tiny
+    const { report } = executeOrder(s, 'buy', 'market', 20);
+    expect(report.fills[0]).toMatchObject({ price: 100.05, quantity: 5 });
+    expect(report.fills.slice(1).map(f => f.quantity)).toEqual([2, 13]); // 15 split 10:90 → 1.5/13.5
   });
 });

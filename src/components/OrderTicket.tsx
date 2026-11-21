@@ -10,13 +10,15 @@ type Props = {
   error: string | null;
   preview: ExecutionReport | null;
   previewQueuePosition?: number;
+  /** The same order previewed under the other matching rule. */
+  altPreview: ExecutionReport | null;
   bestBid: number | null;
   bestAsk: number | null;
 };
 
 const QUICK_QTY = [10, 25, 50, 100];
 
-export function OrderTicket({ ticket, onChange, onSubmit, error, preview, previewQueuePosition, bestBid, bestAsk }: Props) {
+export function OrderTicket({ ticket, onChange, onSubmit, error, preview, previewQueuePosition, altPreview, bestBid, bestAsk }: Props) {
   const set = (patch: Partial<Ticket>) => onChange({ ...ticket, ...patch });
   const nudge = (ticks: number) => {
     const p = Number(ticket.price);
@@ -113,6 +115,7 @@ export function OrderTicket({ ticket, onChange, onSubmit, error, preview, previe
               </ol>
             )}
             {story.insight && <p className="insight">{story.insight}</p>}
+            {preview && altPreview && <RuleComparison a={preview} b={altPreview} />}
           </>
         ) : null}
       </div>
@@ -126,5 +129,37 @@ export function OrderTicket({ ticket, onChange, onSubmit, error, preview, previe
           : 'Trades at your price or better. Whatever cannot trade now rests in the book until filled or cancelled.'}
       </p>
     </form>
+  );
+}
+
+const ruleName = (r: ExecutionReport) => (r.rule === 'pro-rata' ? 'Pro-rata (by size)' : 'Price-time (FIFO)');
+
+/** Shows who would get filled under each matching rule, when they differ. */
+function RuleComparison({ a, b }: { a: ExecutionReport; b: ExecutionReport }) {
+  const ids = [...new Set([...a.fills, ...b.fills].map(f => f.restingOrderId))];
+  const qty = (r: ExecutionReport, id: number) => r.fills.filter(f => f.restingOrderId === id).reduce((s, f) => s + f.quantity, 0);
+  if (ids.every(id => qty(a, id) === qty(b, id))) return null;
+  return (
+    <div className="compare">
+      <span className="eyebrow">THE RULE CHANGES WHO TRADES WITH YOU</span>
+      <table>
+        <thead>
+          <tr>
+            <th>Order</th>
+            <th>{ruleName(a)}</th>
+            <th>{ruleName(b)}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {ids.map(id => (
+            <tr key={id}>
+              <td>#{id}</td>
+              <td>{qty(a, id)}</td>
+              <td className={qty(a, id) !== qty(b, id) ? 'diff' : ''}>{qty(b, id)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }

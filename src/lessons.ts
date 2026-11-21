@@ -107,4 +107,22 @@ export const LESSONS: Lesson[] = [
     build: createInitialState,
     order: { side: 'buy', type: 'market', quantity: 200 },
   },
+  {
+    id: 'pro-rata',
+    number: 8,
+    title: 'Speed or size? Change the rule',
+    concept: 'Matching rule · Pro-rata vs FIFO',
+    task: 'Two sellers wait at $100.10: #1 arrived first with 10 shares, #2 later with 90. Buy 50 and look at the table in the preview, then flip the rule switch above the order book and compare.',
+    takeaway:
+      'Under price-time, being first wins: #1 is filled completely. Under pro-rata, size wins: each order gets a share in proportion to its size, so #2 gets 45 of the 50 shares even though it arrived later. That is why traders race for speed on FIFO markets but post bigger orders on pro-rata ones.',
+    build: () =>
+      stateFromBook([
+        ['sell', 100.1, 10],
+        ['sell', 100.1, 90],
+        ['sell', 100.2, 40],
+        ['buy', 100, 40],
+        ['buy', 99.9, 60],
+      ]),
+    order: { side: 'buy', type: 'market', quantity: 50 },
+  },
 ];

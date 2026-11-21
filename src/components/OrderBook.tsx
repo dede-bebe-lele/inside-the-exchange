@@ -1,4 +1,4 @@
-import { queuePositions, spread as getSpread, type EngineState, type ExecutionReport, type Order } from '../engine';
+import { queuePositions, spread as getSpread, type EngineState, type ExecutionReport, type MatchingRule, type Order } from '../engine';
 import { usd } from '../format';
 
 const LEVELS = 8;
@@ -8,9 +8,14 @@ type Props = {
   preview: ExecutionReport | null;
   onCancel: (id: number) => void;
   onPickPrice: (price: number) => void;
+  onRuleChange: (rule: MatchingRule) => void;
 };
 
-export function OrderBook({ state, preview, onCancel, onPickPrice }: Props) {
+export function OrderBook({ state, preview, onCancel, onPickPrice, onRuleChange }: Props) {
+  const proRata = state.rule === 'pro-rata';
+  // Total shares resting at each price (pro-rata shares a fill by this).
+  const levelTotal = new Map<number, number>();
+  for (const o of [...state.bids, ...state.asks]) levelTotal.set(o.price as number, (levelTotal.get(o.price as number) ?? 0) + o.remaining);
   // Best asks are the LOWEST prices; show them closest to the spread (bottom of the ask block).
   const asks = state.asks.slice(0, LEVELS);
   const bids = state.bids.slice(0, LEVELS);
@@ -43,9 +48,15 @@ export function OrderBook({ state, preview, onCancel, onPickPrice }: Props) {
           {hit ? <em className="fill-badge">−{hit}</em> : null}
           {o.remaining}
         </span>
-        <span className="queue" title="Position in the time-priority queue at this price">
-          {q && q.levelSize > 1 ? `#${q.position} of ${q.levelSize}` : '#1'}
-        </span>
+        {proRata ? (
+          <span className="queue" title="Share of all shares resting at this price — under pro-rata this is the share of each fill it receives">
+            {Math.round((o.remaining / (levelTotal.get(o.price as number) ?? o.remaining)) * 100)}%
+          </span>
+        ) : (
+          <span className="queue" title="Position in the time-priority queue at this price">
+            {q && q.levelSize > 1 ? `#${q.position} of ${q.levelSize}` : '#1'}
+          </span>
+        )}
         <span className="who">{o.owner === 'you' ? <b className="you-badge">YOU</b> : <small>#{o.id}</small>}</span>
         <button className="x" title={`Cancel order #${o.id}`} aria-label={`Cancel order #${o.id}`} onClick={() => onCancel(o.id)}>
           ×
@@ -58,12 +69,24 @@ export function OrderBook({ state, preview, onCancel, onPickPrice }: Props) {
     <div className="panel book">
       <div className="panel-head">
         <h3>Order book</h3>
-        <span className="tag">PRICE → TIME PRIORITY</span>
+        <div className="rule-switch" role="group" aria-label="Matching rule">
+          <button className={proRata ? '' : 'on'} aria-pressed={!proRata} onClick={() => onRuleChange('price-time')} title="Best price first, then first come, first served (most stock exchanges)">
+            Price → Time
+          </button>
+          <button className={proRata ? 'on' : ''} aria-pressed={proRata} onClick={() => onRuleChange('pro-rata')} title="Best price first, then split by order size (some futures markets)">
+            Price → Size
+          </button>
+        </div>
       </div>
+      <p className="rule-note">
+        {proRata
+          ? 'Pro-rata: at the same price, every order gets a share of the fill in proportion to its size. Arriving first no longer matters.'
+          : 'Price-time (FIFO): at the same price, the order that arrived first is filled first.'}
+      </p>
       <div className="book-labels">
         <span>PRICE</span>
         <span className="num">SHARES</span>
-        <span>QUEUE</span>
+        <span>{proRata ? 'SHARE' : 'QUEUE'}</span>
         <span>ORDER</span>
         <span />
       </div>

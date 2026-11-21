@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { botStep, replayRng } from './bots';
-import { bestAsk, bestBid, executeOrder, spread } from './engine';
+import { bestAsk, bestBid, executeOrder, setRule, spread } from './engine';
 import { LESSONS } from './lessons';
 
 const run = (id: string) => {
@@ -64,6 +64,16 @@ describe('lessons demonstrate what their takeaways claim', () => {
     expect(report.cancelledQuantity).toBe(110);
     expect(state.asks).toHaveLength(0);
     expect(spread(state)).toBeNull();
+  });
+});
+
+describe('lesson 8: pro-rata vs FIFO', () => {
+  it('FIFO fills the first order fully; pro-rata gives the bigger order 45 of 50', () => {
+    const { report: fifo } = run('pro-rata');
+    expect(fifo.fills.map(f => [f.restingOrderId, f.quantity])).toEqual([[1, 10], [2, 40]]);
+    const lesson = LESSONS.find(l => l.id === 'pro-rata')!;
+    const { report: pr } = executeOrder(setRule(lesson.build(), 'pro-rata'), 'buy', 'market', 50);
+    expect(pr.fills.map(f => [f.restingOrderId, f.quantity])).toEqual([[1, 5], [2, 45]]);
   });
 });
 

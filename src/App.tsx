@@ -7,14 +7,17 @@ import {
   createInitialState,
   midPrice,
   previewOrder,
+  setRule,
   spread as getSpread,
   submitOrder,
   validateOrder,
   type EngineState,
   type ExecutionReport,
+  type MatchingRule,
 } from './engine';
 import { signed, usd } from './format';
 import { LESSONS, type Lesson } from './lessons';
+import { Intro } from './components/Intro';
 import { Learn } from './components/Learn';
 import { OrderBook } from './components/OrderBook';
 import { OrderTicket, type Ticket } from './components/OrderTicket';
@@ -25,6 +28,15 @@ type Speed = keyof typeof SPEEDS;
 
 const DEFAULT_TICKET: Ticket = { side: 'buy', type: 'market', quantity: '10', price: '100.00' };
 const STORAGE_KEY = 'inside-exchange:completed-lessons';
+const INTRO_KEY = 'inside-exchange:intro-closed';
+
+function readFlag(key: string): boolean {
+  try {
+    return localStorage.getItem(key) === '1';
+  } catch {
+    return false;
+  }
+}
 
 function loadCompleted(): Set<string> {
   try {
@@ -47,6 +59,7 @@ export default function App() {
   const [speed, setSpeed] = useState<Speed>('normal');
   const [lesson, setLesson] = useState<Lesson | null>(null);
   const [completed, setCompleted] = useState<Set<string>>(loadCompleted);
+  const [showIntro, setShowIntro] = useState(() => !readFlag(INTRO_KEY));
 
   const bestBid = getBestBid(state);
   const bestAsk = getBestAsk(state);
@@ -58,6 +71,12 @@ export default function App() {
   const { quantity, price } = parseTicket(ticket);
   const error = validateOrder(ticket.type, quantity, price);
   const preview = useMemo(() => (error ? null : previewOrder(state, ticket.side, ticket.type, quantity, price)), [state, ticket.side, ticket.type, quantity, price, error]);
+  // The same order under the other matching rule, to show what the rule changes.
+  const otherRule: MatchingRule = state.rule === 'pro-rata' ? 'price-time' : 'pro-rata';
+  const altPreview = useMemo(
+    () => (error ? null : previewOrder(setRule(state, otherRule), ticket.side, ticket.type, quantity, price)),
+    [state, otherRule, ticket.side, ticket.type, quantity, price, error],
+  );
   const previewQueuePosition =
     preview && preview.restingQuantity > 0 ? (ticket.side === 'buy' ? state.bids : state.asks).filter(o => o.price === preview.limitPrice).length + 1 : undefined;
 
@@ -103,11 +122,21 @@ export default function App() {
   };
 
   const startLesson = (l: Lesson) => {
+    setShowIntro(false);
     setBotsOn(false);
     setLesson(l);
     setState(l.build());
     setTicket({ side: l.order.side, type: l.order.type, quantity: String(l.order.quantity), price: (l.order.price ?? 100).toFixed(2) });
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const closeIntro = () => {
+    setShowIntro(false);
+    try {
+      localStorage.setItem(INTRO_KEY, '1');
+    } catch {
+      /* ignore */
+    }
   };
 
   const toggleBots = () => {
@@ -128,6 +157,20 @@ export default function App() {
           </div>
         </div>
         <nav aria-label="Sections">
+          {!showIntro && (
+            <a
+              href="#top"
+              onClick={e => {
+                e.preventDefault();
+                setBotsOn(false);
+                setLesson(null);
+                setShowIntro(true);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+            >
+              Intro
+            </a>
+          )}
           <a href="#lessons">Lessons</a>
           <a href="#learn">How it works</a>
         </nav>
@@ -147,6 +190,18 @@ export default function App() {
           </button>
         </div>
       </header>
+
+      {showIntro && (
+        <Intro
+          state={state}
+          setState={s => {
+            setBotsOn(false);
+            setLesson(null);
+            setState(s);
+          }}
+          onClose={closeIntro}
+        />
+      )}
 
       <section className="top">
         <div className="ticker">
@@ -190,6 +245,7 @@ export default function App() {
           preview={preview}
           onCancel={id => setState(s => cancelOrder(s, id))}
           onPickPrice={p => setTicket(t => ({ ...t, type: 'limit', price: p.toFixed(2) }))}
+          onRuleChange={rule => setState(s => setRule(s, rule))}
         />
         <div className="col">
           <OrderTicket
@@ -199,6 +255,7 @@ export default function App() {
             error={error}
             preview={preview}
             previewQueuePosition={previewQueuePosition}
+            altPreview={altPreview}
             bestBid={bestBid}
             bestAsk={bestAsk}
           />
@@ -215,7 +272,7 @@ export default function App() {
 
       <footer>
         <span>Educational simulator only · Not connected to any real exchange, broker or market data · Not investment advice</span>
-        <span>Matching rule: price priority → time priority (FIFO)</span>
+        <span>Matching rule: price priority → {state.rule === 'pro-rata' ? 'size (pro-rata)' : 'time priority (FIFO)'}</span>
       </footer>
     </main>
   );

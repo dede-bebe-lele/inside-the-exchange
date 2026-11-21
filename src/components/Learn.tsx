@@ -5,6 +5,7 @@ const CONCEPTS: Array<{ term: string; text: string }> = [
   { term: 'Market order', text: 'Trade right now at whatever prices are available. Guarantees execution, not price. Any part that cannot fill is cancelled.' },
   { term: 'Limit order', text: 'Trade only at your price or better. If it cannot trade immediately, it rests in the book and adds liquidity.' },
   { term: 'Price-time priority', text: 'The rule that decides who trades first: the best price wins; at equal prices, the order that arrived earliest wins (FIFO).' },
+  { term: 'Pro-rata', text: 'A different tie-break used by some futures markets: at the same price, a fill is shared out in proportion to order size, so big orders beat early ones. Flip the switch above the order book to compare.' },
   { term: 'Partial fill', text: 'Only part of an order trades. A limit order keeps the remainder in the book; a market order cancels it.' },
   { term: 'Slippage', text: 'The difference between the best price you saw and the average price you actually got, caused by walking through several price levels.' },
 ];
@@ -13,7 +14,7 @@ const STEPS = [
   'An order arrives and gets a sequence number — its place in time.',
   'The engine looks at the opposite side of the book, sorted by best price, then earliest time.',
   'While the incoming order has shares left and the best opposite order is at an acceptable price (any price for a market order, at or better than the limit for a limit order), the two trade.',
-  'Each trade happens at the resting order\'s price, for the smaller of the two remaining quantities.',
+  'The shares available at that price are shared out by the tie-break rule: under price-time the earliest order is filled first; under pro-rata each order gets a share in proportion to its size. Each trade happens at the resting order\'s price.',
   'Fully filled resting orders leave the book; a partially filled one keeps its place at the front of its queue.',
   'Leftover shares: a limit order rests in the book at its price, behind earlier orders at that price; a market order is cancelled.',
 ];
@@ -37,11 +38,13 @@ export function Learn() {
           </ol>
           <pre aria-label="Pseudocode">
             {`while incoming.remaining > 0 and book.opposite not empty:
-    best = book.opposite.first   # best price, then oldest
-    if not crosses(incoming, best): break
-    qty = min(incoming.remaining, best.remaining)
-    trade(price = best.price, qty)
-    if best.remaining == 0: remove best
+    level = all orders at the best opposite price   # oldest first
+    if not crosses(incoming, level.price): break
+    take = min(incoming.remaining, total shares in level)
+    split take among level by the rule:
+        price-time → oldest first, each filled fully
+        pro-rata   → in proportion to order size
+    trade each share at level.price; remove filled orders
 if incoming.remaining > 0:
     limit  → rest in book
     market → cancel remainder`}

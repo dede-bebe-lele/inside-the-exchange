@@ -18,7 +18,7 @@ exactly why each trade happened under **price-time priority**.
 | **Price chart & metrics** | Last price and change, best bid, best ask, spread, mid. |
 | **Your account** | Shares, cash and mark-to-market P&L for the orders you trade. |
 | **Simulate market** | Bot traders post and take liquidity so the book comes alive (slow / normal / fast). |
-| **7 guided lessons** | Hand-built order books that each demonstrate one concept: walking the book & slippage, FIFO time priority, price beats time, resting limit orders, price improvement, partial fills, running out of liquidity. Progress is remembered. |
+| **8 guided lessons** | Hand-built order books that each demonstrate one concept: walking the book & slippage, FIFO time priority, price beats time, resting limit orders, price improvement, partial fills, running out of liquidity, pro-rata vs FIFO. Progress is remembered. |
 | **How it works** | The matching algorithm in steps and pseudocode, plus a glossary. |
 | **Engine log** | Every order and cancel the engine processed, in sequence. |
 

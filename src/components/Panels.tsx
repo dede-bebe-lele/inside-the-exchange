@@ -182,7 +182,7 @@ export function Lessons({ lessons, active, completed, onStart }: LessonsProps) {
       <div className="section-head">
         <div>
           <span className="eyebrow">GUIDED LESSONS</span>
-          <h2 id="lessons-title">Learn the matching engine in 7 experiments</h2>
+          <h2 id="lessons-title">Learn the matching engine in {lessons.length} experiments</h2>
         </div>
         <span className="progress">
           {completed.size}/{lessons.length} completed
