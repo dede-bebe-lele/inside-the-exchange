@@ -1,0 +1,23 @@
+import { useMemo, useState } from 'react';
+import { cancelOrder, createInitialState, submitOrder, type EngineState, type OrderType, type Side } from './engine';
+
+export default function App() {
+  const [state, setState] = useState<EngineState>(createInitialState);
+  const [side, setSide] = useState<Side>('buy');
+  const [type, setType] = useState<OrderType>('market');
+  const [quantity, setQuantity] = useState(10);
+  const [price, setPrice] = useState(100);
+  const bestBid = useMemo(() => state.bids[0]?.price ?? null, [state.bids]);
+  const bestAsk = useMemo(() => state.asks[0]?.price ?? null, [state.asks]);
+  const spread = bestBid !== null && bestAsk !== null ? (bestAsk - bestBid).toFixed(2) : '—';
+  const send = () => { try { setState(s => submitOrder(s, side, type, quantity, price)); } catch (e) { alert((e as Error).message); } };
+  const reset = () => setState(createInitialState());
+  return <main className="shell">
+    <header><div className="brand"><span className="logo">IE</span><div><h1>INSIDE THE EXCHANGE</h1><p>Matching engine simulator · Educational demo</p></div></div><button className="ghost" onClick={reset}>Reset simulation ↺</button></header>
+    <section className="top"><div className="ticker"><span className="eyebrow">SIMULATED STOCK</span><h2>ACME <small>DEMO</small></h2><div className="price">${state.lastPrice.toFixed(2)} <span className="neutral">Last trade</span></div></div><div className="metric"><span>BEST BID</span><b>{bestBid === null ? '—' : `$${bestBid.toFixed(2)}`}</b></div><div className="metric"><span>BEST ASK</span><b>{bestAsk === null ? '—' : `$${bestAsk.toFixed(2)}`}</b></div><div className="metric"><span>SPREAD</span><b>${spread}</b></div></section>
+    <section className="grid"><div className="panel book"><div className="panel-head"><h3>Order book</h3><span className="tag">LIVE SIMULATION</span></div><div className="book-labels"><span>PRICE</span><span>SHARES</span><span>QUEUE</span></div><div className="asks"><h4>SELL ORDERS / ASKS</h4>{state.asks.length ? state.asks.slice(0,8).map(o=><div className="book-row ask" key={o.id}><span>${o.price?.toFixed(2)}</span><span>{o.remaining}</span><span className="mini-bar"><i style={{width:`${Math.min(100,o.remaining/100*100)}%`}} /></span><button title="Cancel order" onClick={()=>setState(s=>cancelOrder(s,o.id))}>×</button></div>) : <div className="empty">No asks in book</div>}</div><div className="mid"><span>Spread</span><strong>${spread}</strong></div><div className="bids"><h4>BUY ORDERS / BIDS</h4>{state.bids.length ? state.bids.slice(0,8).map(o=><div className="book-row bid" key={o.id}><span>${o.price?.toFixed(2)}</span><span>{o.remaining}</span><span className="mini-bar"><i style={{width:`${Math.min(100,o.remaining/100*100)}%`}} /></span><button title="Cancel order" onClick={()=>setState(s=>cancelOrder(s,o.id))}>×</button></div>) : <div className="empty">No bids in book</div>}</div></div>
+    <div className="right"><div className="panel order"><div className="panel-head"><h3>Place an order</h3><span className="tag">YOUR INPUT</span></div><div className="switch"><button className={side==='buy'?'active buy':'buy'} onClick={()=>setSide('buy')}>BUY</button><button className={side==='sell'?'active sell':'sell'} onClick={()=>setSide('sell')}>SELL</button></div><div className="type-row"><button className={type==='market'?'chosen':''} onClick={()=>setType('market')}>Market</button><button className={type==='limit'?'chosen':''} onClick={()=>setType('limit')}>Limit</button></div>{type==='limit'&&<label>Limit price ($)<input type="number" min="0.01" step="0.01" value={price} onChange={e=>setPrice(Number(e.target.value))}/></label>}<label>Quantity (shares)<input type="number" min="1" step="1" value={quantity} onChange={e=>setQuantity(Number(e.target.value))}/></label><button className={`submit ${side}`} onClick={send}>{type==='market'?'Place market':'Place limit'} {side} →</button><p className="hint">{type==='market'?'Executes against available opposite orders. Any unfilled remainder is cancelled.':'Rests in the book unless it crosses the opposite side.'}</p></div>
+    <div className="panel trades"><div className="panel-head"><h3>Recent trades</h3><span className="tag">EXECUTIONS</span></div><div className="trade-head"><span>PRICE</span><span>SIZE</span><span>TIME</span></div>{state.trades.length?state.trades.slice(0,7).map(t=><div className="trade-row" key={t.id}><b>${t.price.toFixed(2)}</b><span>{t.quantity}</span><span>#{t.id}</span></div>):<div className="empty">No trades yet. Try a market order.</div>}</div></div></section>
+    <footer><span>Educational simulator only · No real trading or market data</span><span>Matching rule: price priority → time priority</span></footer>
+  </main>;
+}
