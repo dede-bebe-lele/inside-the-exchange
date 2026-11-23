@@ -21,6 +21,7 @@ Every part of the site serves this one idea.
 ## What you can do
 
 ### First visit: a welcome screen, four clicks, a short guide
+- **Opening.** For two seconds, a buy order and a sell order slide together and meet: a trade. It plays once per visit and can be skipped with a click.
 - **Welcome screen.** One question ("who sells it to you?") and three reasons it matters. One button starts the tour.
 - **Story.** Four clicks with two predictions, run by the real engine. While it runs, everything except the order book is dimmed, so you know where to look.
 - **Guide.** Five steps that highlight the order book, the order ticket, the rule switch, the market button and the other sections.
@@ -98,7 +99,7 @@ The engine is pure: every call returns a new state and never changes the old one
 
 ## What is computed and what is not
 
-Everything on screen is computed by the engine from the user's input: fills, prices, queue positions, the hatched previews, the auction price, the charts, the explanations, the experiments, the learners and the neural networks. The only decoration is the small animation on the welcome screen.
+Everything on screen is computed by the engine from the user's input: fills, prices, queue positions, the hatched previews, the auction price, the charts, the explanations, the experiments, the learners and the neural networks. The only decorations are the two-second opening animation and the small animation on the welcome screen.
 
 The only fixed data is the starting order books of the missions (`src/lessons.ts`) and the parameters of the Rule Lab models (`src/lab.ts`). Those parameters are shown on screen, and the robustness check varies them. Random numbers come from a seeded generator, so experiments can be repeated.
 
@@ -131,7 +132,7 @@ The only fixed data is the starting order books of the missions (`src/lessons.ts
 | `src/lessons.ts` | Missions and their auto-checked tasks |
 | `src/nnStore.ts` | Shares the trained networks with the order ticket |
 | `src/format.ts` | Formatting and the plain-language explanation of each execution |
-| `src/components/` | QueueBook, Ticket, Charts, Tape, Story, Splash, Tour, Term, MissionCard, Shell |
+| `src/components/` | QueueBook, Ticket, Charts, Tape, Story, BrandIntro, Splash, Tour, Term, MissionCard, Shell |
 | `src/views/` | Simulator, Missions, Rule Lab, Real market, How it works |
 
 ## Things we didn't make ourselves

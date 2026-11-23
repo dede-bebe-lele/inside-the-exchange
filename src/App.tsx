@@ -1,7 +1,7 @@
 // App: owns the simulator state and wires the views together.
 // All trading logic lives in engine.ts; this file only decides WHEN to call it.
 import { CheckCircle2 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { clearAuction, setMode } from './auction';
 import { botStep, replayRng } from './bots';
 import { makeNews, NEWS_CHANCE, type NewsItem } from './news';
@@ -23,6 +23,7 @@ import {
 } from './engine';
 import { LESSONS, type Lesson } from './lessons';
 import { Sidebar, TopBar, type Theme, type View } from './components/Shell';
+import { BrandIntro } from './components/BrandIntro';
 import { Splash } from './components/Splash';
 import { Tour } from './components/Tour';
 import type { TicketState } from './components/Ticket';
@@ -60,6 +61,22 @@ export default function App() {
   const [showStory, setShowStory] = useState<boolean>(() => !load('story-closed', false));
   const [showSplash, setShowSplash] = useState<boolean>(() => !load('splash-seen', false));
   const [showTour, setShowTour] = useState(false);
+  // The 2-second opening plays once per browser session.
+  const [showOpening, setShowOpening] = useState<boolean>(() => {
+    try {
+      return sessionStorage.getItem('inside-exchange:opening') !== 'played';
+    } catch {
+      return true;
+    }
+  });
+  const endOpening = useCallback(() => {
+    setShowOpening(false);
+    try {
+      sessionStorage.setItem('inside-exchange:opening', 'played');
+    } catch {
+      /* ignore */
+    }
+  }, []);
   const [progress, setProgress] = useState<Record<string, string[]>>(() => load('progress', {}));
   const [mission, setMission] = useState<{ lesson: Lesson; since: number } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -243,6 +260,7 @@ export default function App() {
         onReplayIntro={() => {
           setMission(null);
           setBotsOn(false);
+          setShowOpening(true);
           setShowSplash(true);
         }}
       />
@@ -317,7 +335,8 @@ export default function App() {
         {view === 'live' && <LiveView />}
         {view === 'learn' && <LearnView />}
       </main>
-      {showSplash && <Splash onStart={() => finishSplash(true)} onSkip={() => finishSplash(false)} />}
+      {showOpening && <BrandIntro onDone={endOpening} />}
+      {showSplash && !showOpening && <Splash onStart={() => finishSplash(true)} onSkip={() => finishSplash(false)} />}
       {showTour && view === 'trade' && <Tour onClose={() => setShowTour(false)} />}
       {toast && (
         <div className="toast" role="status">
