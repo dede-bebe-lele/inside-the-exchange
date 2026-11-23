@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { botStep, replayRng } from './bots';
 import { bestAsk, bestBid, executeOrder, setRule, spread } from './engine';
-import { LESSONS } from './lessons';
+import { averageCost, LESSONS } from './lessons';
 import { clearAuction } from './auction';
 
 const run = (id: string) => {
@@ -131,5 +131,16 @@ describe('new missions', () => {
     s = executeOrder(s, 'buy', 'limit', 20, 99.95).state;
     s = executeOrder(s, 'sell', 'limit', 20, 100.05).state;
     expect(m.tasks[0].check({ state: s, reports: [] })).toBe(true);
+  });
+});
+
+describe('average cost', () => {
+  it('remembers your buys even after hundreds of other trades', () => {
+    let s = executeOrder(LESSONS[0].build(), 'buy', 'market', 45).state; // 10 @ 100.10, 30 @ 100.20, 5 @ 100.30
+    let seed = 9;
+    const rand = () => ((seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296);
+    for (let i = 0; i < 900; i++) s = botStep(s, replayRng(Array.from({ length: 12 }, rand)), 100);
+    expect(s.portfolio.shares).toBe(45);
+    expect(averageCost(s)).toBeCloseTo((10 * 100.1 + 30 * 100.2 + 5 * 100.3) / 45, 6);
   });
 });

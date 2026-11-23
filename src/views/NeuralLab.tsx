@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { MatchingRule } from '../engine';
 import { ChartFrame, ShareChart } from '../components/Charts';
 import { seeded, type Rng } from '../lab';
-import { accuracy, baseline, FEATURES, fitScaler, HORIZON, importance, makeSample, newNet, predict, scale, trainEpoch, type Net, type Sample, type Scaler } from '../neural';
+import { accuracy, baseline, FEATURES, fitScaler, groupImportance, HORIZON, importance, makeSample, newNet, predict, QUEUE_COLUMNS, scale, trainEpoch, type Net, type Sample, type Scaler } from '../neural';
 import { setModels } from '../nnStore';
 
 const SAMPLES = 3000;
@@ -16,7 +16,7 @@ const RULES: MatchingRule[] = ['price-time', 'pro-rata'];
 const NAME: Record<MatchingRule, string> = { 'price-time': 'Price → Time', 'pro-rata': 'Price → Size' };
 const COLOR: Record<MatchingRule, string> = { 'price-time': 'var(--accent)', 'pro-rata': 'var(--amber)' };
 
-type Result = { net: Net; scaler: Scaler; losses: number[]; acc: number; base: number; imp: number[]; fillRate: number };
+type Result = { net: Net; scaler: Scaler; losses: number[]; acc: number; base: number; imp: number[]; queueImp: number; fillRate: number };
 type Phase = 'idle' | 'data' | 'train' | 'done';
 
 export function NeuralLab() {
@@ -64,7 +64,7 @@ export function NeuralLab() {
         j.epoch++;
         setProgress(j.epoch / EPOCHS);
         const partial: Partial<Record<MatchingRule, Result>> = {};
-        for (const rule of RULES) partial[rule] = { net: j.nets[rule], scaler: j.scalers[rule]!, losses: [...j.losses[rule]], acc: 0, base: 0, imp: [], fillRate: 0 };
+        for (const rule of RULES) partial[rule] = { net: j.nets[rule], scaler: j.scalers[rule]!, losses: [...j.losses[rule]], acc: 0, base: 0, imp: [], queueImp: 0, fillRate: 0 };
         setResults(partial);
         if (j.epoch >= EPOCHS) {
           // Finished: check each network on the 30% of situations it never saw.
@@ -74,7 +74,7 @@ export function NeuralLab() {
               const sc = j.scalers[rule]!;
               return [
                 rule,
-                { net: j.nets[rule], scaler: sc, losses: j.losses[rule], acc: accuracy(j.nets[rule], test, sc), base: baseline(test), imp: importance(j.nets[rule], test, sc, j.rng), fillRate: j.data[rule].filter(d => d.y).length / SAMPLES },
+                { net: j.nets[rule], scaler: sc, losses: j.losses[rule], acc: accuracy(j.nets[rule], test, sc), base: baseline(test), imp: importance(j.nets[rule], test, sc, j.rng), queueImp: groupImportance(j.nets[rule], test, sc, j.rng, QUEUE_COLUMNS), fillRate: j.data[rule].filter(d => d.y).length / SAMPLES },
               ];
             }),
           ) as Record<MatchingRule, Result>;
@@ -93,8 +93,8 @@ export function NeuralLab() {
   const done = phase === 'done';
   const pt = results['price-time'];
   const pr = results['pro-rata'];
-  const maxImp = done && pt && pr ? Math.max(0.01, ...pt.imp, ...pr.imp) : 1;
-  const ahead = FEATURES.findIndex(f => f.key === 'ahead');
+  const maxImp = done && pt && pr ? Math.max(0.01, ...pt.imp, ...pr.imp, pt.queueImp, pr.queueImp) : 1;
+  const top = (r: Result) => FEATURES[r.imp.indexOf(Math.max(...r.imp))].label.toLowerCase();
 
   return (
     <section className="card">
@@ -170,6 +170,14 @@ export function NeuralLab() {
             <div style={{ marginTop: 16 }}>
               <span className="eyebrow">What each network relies on — how much worse it gets if we scramble one fact</span>
               <div className="imp-grid">
+                <div className="imp-row group">
+                  <span title="ahead + total at my price + my share, scrambled together">All queue information together</span>
+                  <div className="imp-bars">
+                    {RULES.map(r => (
+                      <i key={r} style={{ width: `${(Math.max(0, results[r]!.queueImp) / maxImp) * 100}%`, background: COLOR[r] }} title={`${NAME[r]}: ${results[r]!.queueImp.toFixed(3)}`} />
+                    ))}
+                  </div>
+                </div>
                 {FEATURES.map((f, j) => (
                   <div className="imp-row" key={f.key}>
                     <span title={f.hint}>{f.label}</span>
@@ -182,10 +190,14 @@ export function NeuralLab() {
                 ))}
               </div>
             </div>
+            {/* Every sentence below is chosen by the measured numbers. */}
             <p className="verdict-box">
-              Both networks care most about <b>how far your price is from the best price</b>. But look at <b>“shares ahead of me in the queue”</b>: the Price → Time network leans on it (
-              {pt.imp[ahead].toFixed(3)}), while the Price → Size network almost ignores it ({pr.imp[ahead].toFixed(3)}). Nobody told them the rules — they learned from the engine's results that under pro-rata your place in line
-              doesn't matter. Also: under pro-rata {Math.round(pr.fillRate * 100)}% of waiting orders got some fill, versus {Math.round(pt.fillRate * 100)}% under price-time, because everyone at the best price gets a slice.
+              The fact each network relies on most: <b>{top(pt)}</b> (Price → Time) and <b>{top(pr)}</b> (Price → Size). Scrambling <b>all the queue information together</b> hurts the Price → Time network by {pt.queueImp.toFixed(3)} and
+              the Price → Size network by {pr.queueImp.toFixed(3)}.{' '}
+              {pt.queueImp > 3 * Math.max(0.005, pr.queueImp)
+                ? 'So the first network learned that your place in the queue matters, and the second learned that it barely does — nobody told them the rules; they found it in the engine’s results.'
+                : 'This run the difference is small — generate and train again; with only 3,000 situations, results vary.'}{' '}
+              Under pro-rata {Math.round(pr.fillRate * 100)}% of waiting orders got some fill, versus {Math.round(pt.fillRate * 100)}% under price-time.
             </p>
             <AskTheNetwork pt={pt} pr={pr} />
           </>
@@ -201,10 +213,13 @@ function AskTheNetwork({ pt, pr }: { pt: Result; pr: Result }) {
   const [ahead, setAhead] = useState(30);
   const [size, setSize] = useState(20);
   const [spread, setSpread] = useState(2);
+  // Only ask about situations that existed in the training data: an order that improves the
+  // best price is alone at its new price, so nobody can be ahead of it.
+  const queueAhead = behind < 0 ? 0 : ahead;
   const x = useMemo(() => {
-    const level = ahead + size;
-    return [behind, ahead, size, level, size / level, spread, 0];
-  }, [behind, ahead, size, spread]);
+    const level = queueAhead + size;
+    return [behind, queueAhead, size, level, size / level, spread, pt.scaler.mean[6]];
+  }, [behind, queueAhead, size, spread, pt.scaler.mean]);
   const p = (r: Result) => predict(r.net, scale(x, r.scaler));
   const row = (label: string, v: number, set: (n: number) => void, min: number, max: number, step: number, fmt: (n: number) => string) => (
     <label className="field">
@@ -220,7 +235,7 @@ function AskTheNetwork({ pt, pr }: { pt: Result; pr: Result }) {
         <b>Ask the networks</b>
         <p className="hint">Change the situation; both trained networks answer instantly. The sliders stay inside the range of situations the networks were trained on — outside it, a network is only guessing.</p>
         {row('Cents behind the best price', behind, setBehind, -1, 3, 1, v => (v < 0 ? '1 better' : String(v)))}
-        {row('Shares ahead of you in the queue', ahead, setAhead, 0, 125, 5, v => String(v))}
+        {row('Shares ahead of you in the queue', queueAhead, setAhead, 0, 125, 5, v => (behind < 0 ? '0 (you improved the price)' : String(v)))}
         {row('Your order size', size, setSize, 5, 65, 5, v => String(v))}
         {row('Spread (cents)', spread, setSpread, 1, 5, 1, v => String(v))}
       </div>

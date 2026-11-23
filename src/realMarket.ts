@@ -3,7 +3,7 @@
 // "what would my order cost right now?" against real liquidity.
 //
 // No API key is needed: Coinbase and Kraken publish their order books openly and
-// allow browsers to read them (CORS). Coinbase is tried first, Kraken second.
+// allow browsers to read them (CORS). Kraken is tried first, Coinbase second.
 import { compareAsks, compareBids, createInitialState, type EngineState, type Order, type Side } from './engine';
 
 /** 1 BTC = 100,000,000 satoshis. The engine counts whole units, so we count in satoshis. */
@@ -25,6 +25,18 @@ const LEVELS = 40;
 const MAX_CHIPS_PER_LEVEL = 6;
 
 async function getJson(url: string, signal?: AbortSignal): Promise<unknown> {
+  // Give up after 4 seconds, so a slow exchange can't freeze the page.
+  const timeout = new AbortController();
+  const timer = setTimeout(() => timeout.abort(), 4000);
+  signal?.addEventListener('abort', () => timeout.abort());
+  try {
+    return await fetchJson(url, timeout.signal);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchJson(url: string, signal: AbortSignal): Promise<unknown> {
   const res = await fetch(url, { signal, cache: 'no-store' });
   if (!res.ok) throw new Error(`${url} answered ${res.status}`);
   return res.json();
@@ -49,13 +61,16 @@ async function fromKraken(signal?: AbortSignal): Promise<Snapshot> {
   return { source: 'Kraken', product: 'BTC-USD', fetchedAt: Date.now(), bids: parse(book.bids), asks: parse(book.asks) };
 }
 
-/** Fetch the live book, trying Coinbase and then Kraken. */
+/**
+ * Fetch the live book: Kraken first (its reply is small — just the levels we need),
+ * Coinbase if Kraken fails (its full book is about 1 MB, but it also says how many orders sit at each price).
+ */
 export async function fetchSnapshot(signal?: AbortSignal): Promise<Snapshot> {
   try {
-    return await fromCoinbase(signal);
+    return await fromKraken(signal);
   } catch (first) {
     if (signal?.aborted) throw first;
-    return await fromKraken(signal);
+    return await fromCoinbase(signal);
   }
 }
 
@@ -94,7 +109,7 @@ export function stateFromSnapshot(snap: Snapshot): EngineState {
     openPrice: mid,
     nextOrderId: id,
     clock: id,
-    portfolio: { shares: 0, cash: 0 },
+    portfolio: { shares: 0, cash: 0, boughtQty: 0, boughtCost: 0 },
     maxQuantity: 1000 * SATS_PER_BTC,
   };
 }

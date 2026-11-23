@@ -139,10 +139,10 @@ export function Ticket({ ticket, onChange, onSubmit, error, preview, altPreview,
                     : `If the auction ran right now, everything would trade at ${usd(auctionWithMine.price)} and you would get ${auctionWithMine.mine} share${auctionWithMine.mine === 1 ? '' : 's'}.`}
                 </p>
               )}
-              {fillChance && (
+              {fillChance && ticket.side === 'buy' && (
                 <p className="insight nn">
-                  <b>Neural network says: {Math.round(fillChance.p * 100)}%</b> chance someone trades with your waiting order within 25 market moves (it was right {Math.round(fillChance.accuracy * 100)}% of the time on
-                  situations it never saw — trained in Rule Lab).
+                  <b>Neural network's guess: {Math.round(fillChance.p * 100)}%</b> chance someone sells to you within 25 market moves. It was trained in Rule Lab on a calm simulated market (no news) and was right{' '}
+                  {Math.round(fillChance.accuracy * 100)}% of the time there — treat it as a rough guide.
                 </p>
               )}
               {preview.status !== 'queued' && altPreview && <RuleComparison a={preview} b={altPreview} />}

@@ -9,7 +9,7 @@ export const TOUR: TourStep[] = [
   { target: 'ticket', title: 'Your order', text: 'Choose buy or sell, how many, and at what price. Before you send it, the preview hatches the exact chips you would trade with and explains each step.' },
   { target: 'rules', title: 'Change the rule', text: 'Who goes first when prices are equal? The earliest order (Price → Time), the biggest (Price → Size) — or nobody, in a batch auction. Flip it and watch the hatching move.' },
   { target: 'market', title: 'Bring the market to life', text: 'Simulated traders start sending orders, and news moves the price. Try to get your waiting order filled.' },
-  { target: 'nav', title: 'Go further', text: 'Missions are short challenges. The Rule Lab runs experiments — including a neural network that learns what each rule rewards. Real market loads today’s real Bitcoin order book.' },
+  { target: 'nav', title: 'Go further', text: 'Missions are short challenges. The Rule Lab runs experiments — including learners that discover what each rule rewards, and a neural network that predicts whether a waiting order gets filled. Real market loads today’s real Bitcoin order book.' },
 ];
 
 type Props = { steps?: TourStep[]; onClose: () => void };

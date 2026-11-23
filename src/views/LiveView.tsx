@@ -2,7 +2,7 @@
 // run through OUR matching engine. Nothing is ever sent to the exchange — we only
 // ask the engine "what would happen if this order arrived right now?".
 import { AlertTriangle, Info, RefreshCw } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { previewOrder, type Side } from '../engine';
 import { ChartFrame, DepthChart } from '../components/Charts';
 import { QueueBook } from '../components/QueueBook';
@@ -27,7 +27,10 @@ export function LiveView() {
     setAmountText(String(v));
   };
 
+  const busy = useRef(false);
   const load = useCallback(async () => {
+    if (busy.current) return; // never stack requests on top of a slow one
+    busy.current = true;
     setLoading(true);
     try {
       setSnap(await fetchSnapshot());
@@ -35,6 +38,7 @@ export function LiveView() {
     } catch (e) {
       setError((e as Error).message || 'Could not reach the exchange.');
     } finally {
+      busy.current = false;
       setLoading(false);
     }
   }, []);
@@ -45,7 +49,7 @@ export function LiveView() {
 
   useEffect(() => {
     if (!auto) return;
-    const t = window.setInterval(load, 5000);
+    const t = window.setInterval(load, 10000);
     return () => window.clearInterval(t);
   }, [auto, load]);
 
@@ -73,7 +77,7 @@ export function LiveView() {
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <label className="btn" style={{ cursor: 'pointer' }}>
-            <input type="checkbox" checked={auto} onChange={e => setAuto(e.target.checked)} style={{ accentColor: 'var(--accent)' }} /> Update every 5 s
+            <input type="checkbox" checked={auto} onChange={e => setAuto(e.target.checked)} style={{ accentColor: 'var(--accent)' }} /> Update every 10 s
           </label>
           <button className="btn" onClick={load} disabled={loading}>
             <RefreshCw size={14} className={loading ? 'spin' : ''} /> Refresh

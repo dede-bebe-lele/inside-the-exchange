@@ -5,6 +5,7 @@
 import { FlaskConical, Grid3x3, Play, RotateCcw } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { MatchingRule } from '../engine';
+import { usd } from '../format';
 import { ChartFrame, ShareChart } from '../components/Charts';
 import { NeuralLab } from './NeuralLab';
 import {
@@ -39,7 +40,7 @@ const COLORS = ['var(--faint)', 'var(--accent)', 'var(--amber)', 'var(--ask)'];
 const ROUNDS = 800;
 const PER_FRAME = 8;
 
-const money = (n: number, d = 2) => `${n < 0 ? '−' : ''}$${Math.abs(n).toFixed(d)}`;
+const money = (n: number, d = 2) => usd(n, d);
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 
 /** Runs a learner for ROUNDS rounds, a few per animation frame, so you can watch it learn. */
@@ -313,15 +314,16 @@ function SnipingRace() {
           </div>
           {t.best >= 0 && !t.running && trained.current && (
             <p className="verdict-box">
-              {trained.current.batch ? (
-                <>
-                  In the batch auction the learner chose <b>{SPEED_LEVELS[t.best].label.toLowerCase()}</b>. A fraction of a millisecond almost never changes which batch you land in, so speed is money thrown away.
-                </>
-              ) : (
-                <>
-                  In continuous matching the learner chose <b>{SPEED_LEVELS[t.best].label.toLowerCase()}</b>: when the first message wins, a tiny speed edge is worth paying for. Now switch to Batch auction and train again.
-                </>
-              )}
+              {/* Every sentence here depends on what was actually measured, not on what we expected. */}
+              In {trained.current.batch ? `a batch auction every ${interval} ms` : 'continuous matching'} the learner chose <b>{SPEED_LEVELS[t.best].label.toLowerCase()}</b>
+              {t.best === truth.indexOf(Math.max(...truth)) ? ' — the true best choice.' : ` — the true best was ${SPEED_LEVELS[truth.indexOf(Math.max(...truth))].label.toLowerCase()}; train again.`}{' '}
+              {truth.indexOf(Math.max(...truth)) === 0
+                ? trained.current.batch
+                  ? 'Here a fraction of a millisecond almost never changes which batch you land in, so paying for speed is money thrown away.'
+                  : 'Even here, the speed upgrades cost more than they win — try bigger news.'
+                : trained.current.batch
+                  ? 'Speed still pays here: when the auction runs about as often as the speed gap, being faster again decides which batch you land in. Batches must be much longer than the speed difference.'
+                  : 'When the first message wins, a tiny speed edge is worth paying for. Now switch to Batch auction and train again.'}
             </p>
           )}
         </div>
@@ -449,7 +451,9 @@ function Ecosystem() {
     if (c.offRate > 0.5) parts.push(`With continuous matching the news risk was so big that Maya mostly stopped quoting (${pct(c.offRate)} of rounds) — investors could barely trade.`);
     else if (c.avgEdge > 0.15) parts.push(`With continuous matching the snipers raced: ${c.avgEdge.toFixed(2)} ms of speed each, ${money(c.speedSpend)} per round in total, and ${pct(c.snipeRate)} of news events were sniped. Maya widened her spread to survive.`);
     else parts.push(`With continuous matching Maya widened her spread enough that sniping wasn't worth much, so there was little speed race — but the wide spread still cost investors.`);
-    parts.push(`Investors traded ${c.volume.toFixed(0)} shares per round there, versus ${b.volume.toFixed(0)} in the batch auction, where only ${pct(b.snipeRate)} of news events were sniped and nobody bought speed.`);
+    parts.push(
+      `Investors traded ${c.volume.toFixed(0)} shares per round there, versus ${b.volume.toFixed(0)} in the batch auction, where ${pct(b.snipeRate)} of news events were sniped${b.avgEdge < 0.1 ? ' and nobody bought speed' : ` and snipers still bought ${b.avgEdge.toFixed(2)} ms of speed`}.`,
+    );
     return parts.join(' ');
   };
 

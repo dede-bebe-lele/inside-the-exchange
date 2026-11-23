@@ -1,6 +1,6 @@
 // A word with a dotted underline: hover, focus or tap it to see a one-sentence meaning.
 // Jargon is explained exactly where it first appears, not on a separate page.
-import { useState, type ReactNode } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 
 export const GLOSSARY: Record<string, string> = {
   bid: 'A bid is an offer to BUY at a certain price. The best bid is the highest one.',
@@ -18,13 +18,26 @@ export const GLOSSARY: Record<string, string> = {
 
 export function Term({ k, children }: { k: keyof typeof GLOSSARY | string; children: ReactNode }) {
   const [open, setOpen] = useState(false);
+  const id = useId();
   const text = GLOSSARY[k];
   if (!text) return <>{children}</>;
   return (
-    <span className="term-word" tabIndex={0} onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)} onFocus={() => setOpen(true)} onBlur={() => setOpen(false)} onClick={() => setOpen(o => !o)}>
+    <span
+      className="term-word"
+      role="button"
+      tabIndex={0}
+      aria-describedby={open ? id : undefined}
+      // Hover opens it only for a real mouse; on a touch screen a tap does it (no open-then-close flicker).
+      onPointerEnter={e => e.pointerType === 'mouse' && setOpen(true)}
+      onPointerLeave={e => e.pointerType === 'mouse' && setOpen(false)}
+      onFocus={() => setOpen(true)}
+      onBlur={() => setOpen(false)}
+      onClick={() => setOpen(true)}
+      onKeyDown={e => e.key === 'Escape' && setOpen(false)}
+    >
       {children}
       {open && (
-        <span className="term-pop" role="tooltip">
+        <span className="term-pop" role="tooltip" id={id}>
           {text}
         </span>
       )}

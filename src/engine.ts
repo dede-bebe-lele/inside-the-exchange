@@ -55,7 +55,8 @@ export type Trade = {
 };
 
 /** The user's simulated account: shares held (negative = short) and cash. */
-export type Portfolio = { shares: number; cash: number };
+/** shares and cash, plus totals of everything you ever bought (for the average price paid). */
+export type Portfolio = { shares: number; cash: number; boughtQty: number; boughtCost: number };
 
 export type Fill = {
   restingOrderId: number;
@@ -124,7 +125,6 @@ export type EngineState = {
   maxQuantity?: number;
 };
 
-export const TICK_SIZE = 0.01;
 export const MAX_QUANTITY = 1_000_000;
 export const MAX_HISTORY = 200;
 /** Enough to buy a few hundred $100 shares. The simulator also allows selling shares you don't own (short selling). */
@@ -178,7 +178,7 @@ export function createInitialState(): EngineState {
     nextTradeId: 1,
     clock: orders.length + 1,
     activity: [],
-    portfolio: { shares: 0, cash: STARTING_CASH },
+    portfolio: { shares: 0, cash: STARTING_CASH, boughtQty: 0, boughtCost: 0 },
     rule: 'price-time',
     mode: 'continuous',
     pending: [],
@@ -342,7 +342,7 @@ export function executeOrder(
     }
   }
 
-  const { shares, cash } = applyTrades(state.portfolio, newTrades);
+  const portfolio = applyTrades(state.portfolio, newTrades);
 
   const notional = fills.reduce((sum, f) => sum + f.price * f.quantity, 0);
   const averagePrice = filledQuantity > 0 ? Math.round((notional / filledQuantity) * 10000) / 10000 : null;
@@ -382,7 +382,7 @@ export function executeOrder(
       nextTradeId,
       clock: state.clock + 1,
       activity: [{ kind: 'order' as const, report }, ...state.activity].slice(0, MAX_HISTORY),
-      portfolio: { shares, cash },
+      portfolio,
     },
     report,
   };
@@ -390,18 +390,20 @@ export function executeOrder(
 
 /** Update the user's account for every trade they are on (either side). */
 export function applyTrades(portfolio: Portfolio, trades: Trade[]): Portfolio {
-  let { shares, cash } = portfolio;
+  let { shares, cash, boughtQty, boughtCost } = portfolio;
   for (const t of trades) {
     if (t.buyerOwner === 'you') {
       shares += t.quantity;
       cash -= t.price * t.quantity;
+      boughtQty += t.quantity;
+      boughtCost += t.price * t.quantity;
     }
     if (t.sellerOwner === 'you') {
       shares -= t.quantity;
       cash += t.price * t.quantity;
     }
   }
-  return { shares, cash: Math.round(cash * 100) / 100 };
+  return { shares, cash: Math.round(cash * 100) / 100, boughtQty, boughtCost };
 }
 
 /**
@@ -409,8 +411,15 @@ export function applyTrades(portfolio: Portfolio, trades: Trade[]): Portfolio {
  * now be "crossed" — a bid above an ask — that's fine until the auction); a market order
  * waits in `pending`. The auction (auction.ts) matches everything later at one price.
  */
-function queueForAuction(state: EngineState, incoming: Order, bids: Order[], asks: Order[]): { state: EngineState; report: ExecutionReport } {
+function queueForAuction(state: EngineState, incoming: Order, bidsIn: Order[], asksIn: Order[]): { state: EngineState; report: ExecutionReport } {
   const pending = [...state.pending];
+  // Self-trade prevention in batch mode too: if your new order could trade with one of your
+  // own waiting orders in the auction, that waiting order is cancelled now.
+  const crossesMine = (o: Order) =>
+    o.owner === 'you' && o.side !== incoming.side && (incoming.type === 'market' || (incoming.side === 'buy' ? (incoming.price as number) >= (o.price as number) : (incoming.price as number) <= (o.price as number)));
+  const selfTradeCancelled = incoming.owner === 'you' ? [...bidsIn, ...asksIn].filter(crossesMine).map(o => o.id) : [];
+  const bids = bidsIn.filter(o => !selfTradeCancelled.includes(o.id));
+  const asks = asksIn.filter(o => !selfTradeCancelled.includes(o.id));
   if (incoming.type === 'limit') {
     const sameSide = incoming.side === 'buy' ? bids : asks;
     sameSide.push(incoming);
@@ -428,7 +437,7 @@ function queueForAuction(state: EngineState, incoming: Order, bids: Order[], ask
     quantity: incoming.quantity,
     limitPrice: incoming.price,
     bestOppositePrice: opposite[0]?.price ?? null,
-    selfTradeCancelled: [],
+    selfTradeCancelled,
     fills: [],
     filledQuantity: 0,
     averagePrice: null,

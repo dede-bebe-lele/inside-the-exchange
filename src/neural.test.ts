@@ -1,6 +1,6 @@
 import { describe as group, expect, it } from 'vitest';
 import { seeded } from './lab';
-import { accuracy, baseline, FEATURES, fitScaler, forward, importance, makeSample, newNet, predict, trainEpoch, type Sample } from './neural';
+import { accuracy, baseline, FEATURES, fitScaler, forward, groupImportance, makeSample, newNet, predict, QUEUE_COLUMNS, trainEpoch, type Sample } from './neural';
 
 group('the network itself', () => {
   it('backpropagation matches a numerical gradient (the maths is right)', () => {
@@ -15,12 +15,16 @@ group('the network itself', () => {
     // One SGD step with learning rate lr moves w2[0] by −lr·gradient; compare with a finite difference.
     const lr = 1e-3;
     const stepped = trainEpoch(net, [{ x, y }], { mean: [0, 0, 0], std: [1, 1, 1] }, lr, rng).net;
-    const analytic = (net.w2[0] - stepped.w2[0]) / lr;
     const eps = 1e-6;
-    const plus = { ...net, w2: net.w2.map((w, i) => (i === 0 ? w + eps : w)) };
-    const minus = { ...net, w2: net.w2.map((w, i) => (i === 0 ? w - eps : w)) };
-    const numeric = (loss(plus) - loss(minus)) / (2 * eps);
-    expect(analytic).toBeCloseTo(numeric, 4);
+    // Output layer weight w2[0]
+    const analytic2 = (net.w2[0] - stepped.w2[0]) / lr;
+    const numeric2 = (loss({ ...net, w2: net.w2.map((w, i) => (i === 0 ? w + eps : w)) }) - loss({ ...net, w2: net.w2.map((w, i) => (i === 0 ? w - eps : w)) })) / (2 * eps);
+    expect(analytic2).toBeCloseTo(numeric2, 4);
+    // Hidden layer weight w1[0][0] — checks the (1 − h²) part of backpropagation
+    const bump = (d: number) => ({ ...net, w1: net.w1.map((row, i) => row.map((w, j) => (i === 0 && j === 0 ? w + d : w))) });
+    const analytic1 = (net.w1[0][0] - stepped.w1[0][0]) / lr;
+    const numeric1 = (loss(bump(eps)) - loss(bump(-eps))) / (2 * eps);
+    expect(analytic1).toBeCloseTo(numeric1, 4);
   });
 
   it('learns a pattern a straight line cannot (XOR)', () => {
@@ -48,10 +52,9 @@ group('experiment 4: what decides whether a waiting order gets filled', () => {
     const sc = fitScaler(train);
     let net = newNet(FEATURES.length, 10, rng);
     for (let e = 0; e < 25; e++) net = trainEpoch(net, train, sc, 0.02, rng).net;
-    const imp = importance(net, test, sc, rng);
-    return { acc: accuracy(net, test, sc), base: baseline(test), imp, fillRate: data.filter(d => d.y).length / data.length };
+    const queue = groupImportance(net, test, sc, rng, QUEUE_COLUMNS);
+    return { acc: accuracy(net, test, sc), base: baseline(test), queue, fillRate: data.filter(d => d.y).length / data.length };
   };
-  const ahead = FEATURES.findIndex(f => f.key === 'ahead');
   const fifo = [run('price-time', 1), run('price-time', 7)];
   const pr = [run('pro-rata', 101), run('pro-rata', 107)];
 
@@ -59,9 +62,9 @@ group('experiment 4: what decides whether a waiting order gets filled', () => {
     for (const r of [...fifo, ...pr]) expect(r.acc).toBeGreaterThan(r.base + 0.05);
   });
 
-  it('under price-time the network relies on the queue ahead of you; under pro-rata it ignores it', () => {
-    for (const f of fifo) expect(f.imp[ahead]).toBeGreaterThan(0.04);
-    for (const p of pr) expect(p.imp[ahead]).toBeLessThan(0.03);
+  it('under price-time the network relies on the queue information; under pro-rata it barely does', () => {
+    for (const f of fifo) expect(f.queue).toBeGreaterThan(0.15);
+    for (const p of pr) expect(p.queue).toBeLessThan(0.05);
   });
 
   it('waiting orders get some fill far more often under pro-rata', () => {

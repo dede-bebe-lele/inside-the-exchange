@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { auctionCurve, clearAuction, setMode } from './auction';
-import { bestAsk, bestBid, setRule, stateFromBook, submitOrder, type EngineState } from './engine';
+import { bestAsk, bestBid, executeOrder, setRule, stateFromBook, submitOrder, type EngineState } from './engine';
 import { seeded } from './lab';
 
 const batchBook = (book: Array<['buy' | 'sell', number, number]>): EngineState => {
@@ -113,5 +113,19 @@ describe('batch auction', () => {
     expect(s.mode).toBe('continuous');
     expect(s.trades).toHaveLength(1);
     expect(s.bids).toHaveLength(0);
+  });
+});
+
+describe('self-trade prevention in batch mode', () => {
+  it('your new order cancels your own waiting order it could trade with in the auction', () => {
+    let s = setMode(stateFromBook([]), 'batch');
+    s = submitOrder(s, 'sell', 'limit', 10, 100, 'you');
+    const mySell = s.asks[0].id;
+    s = submitOrder(s, 'sell', 'limit', 10, 100, 'market');
+    const r = executeOrder(s, 'buy', 'limit', 10, 100, 'you');
+    expect(r.report.selfTradeCancelled).toEqual([mySell]);
+    const { result } = clearAuction(r.state);
+    expect(result.trades.some(t => t.buyerOwner === 'you' && t.sellerOwner === 'you')).toBe(false);
+    expect(result.volume).toBe(10);
   });
 });

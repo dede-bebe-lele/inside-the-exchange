@@ -60,11 +60,11 @@ export function TradeView(p: Props) {
           state={p.state}
           preview={p.preview}
           onPickPrice={price => p.setTicket({ ...p.ticket, type: 'limit', price: price.toFixed(2) })}
-          onCancel={p.onCancel}
-          onRuleChange={p.onRule}
-          onModeChange={p.onMode}
+          onCancel={p.showStory ? undefined : p.onCancel}
+          onRuleChange={p.showStory ? undefined : p.onRule}
+          onModeChange={p.showStory ? undefined : p.onMode}
           auction={p.auction}
-          onRunAuction={p.onRunAuction}
+          onRunAuction={p.showStory ? undefined : p.onRunAuction}
           className="area-book"
         />
         <div className="area-mid">

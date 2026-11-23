@@ -67,7 +67,9 @@ export function Story({ state, setState, onClose, onDone }: Props) {
   };
 
   const step3 = (choice: number) => {
-    const { state: next, report } = executeOrder(state, 'sell', 'market', 25, undefined, 'market');
+    // Run on the story's own copy of the book (after step 2), always under price-time.
+    const base = snapshot ? setRule(snapshot, 'price-time') : state;
+    const { state: next, report } = executeOrder(base, 'sell', 'market', 25, undefined, 'market');
     setState(next);
     const mine = got(report, myId);
     const right = choice === mine; // checked against what the engine actually did

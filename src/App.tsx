@@ -260,6 +260,7 @@ export default function App() {
               onToggleBots={() => setBotsOn(b => !b)}
               onSpeed={setSpeed}
               onReset={reset}
+              locked={showStory}
             />
             <TradeView
               state={state}

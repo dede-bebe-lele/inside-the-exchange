@@ -11,11 +11,10 @@ export type Task = { id: string; text: string; check: (ctx: MissionContext) => b
 
 const prices = (r: ExecutionReport) => new Set(r.fills.map(f => f.price));
 
-/** Average price the user paid per share bought, from the user's own buy trades. */
+/** Average price the user paid per share bought (kept in the portfolio, so it never forgets). */
 export function averageCost(state: EngineState): number | null {
-  const buys = state.trades.filter(t => t.buyerOwner === 'you');
-  const qty = buys.reduce((a, t) => a + t.quantity, 0);
-  return qty > 0 ? buys.reduce((a, t) => a + t.price * t.quantity, 0) / qty : null;
+  const { boughtQty, boughtCost } = state.portfolio;
+  return boughtQty > 0 ? boughtCost / boughtQty : null;
 }
 
 export type Lesson = {
@@ -107,7 +106,7 @@ export const LESSONS: Lesson[] = [
     tasks: [
       { id: 'inside', text: 'Place a limit buy inside the spread', check: ({ reports }) => reports.some(r => r.type === 'limit' && r.side === 'buy' && r.status === 'resting' && (r.limitPrice ?? 0) > 100 && (r.limitPrice ?? 0) < 100.1) },
       { id: 'best', text: 'Be the best bid in the book', check: ({ state }) => state.bids[0]?.owner === 'you' },
-      { id: 'hit', text: 'Get filled while you wait (turn on Live market)', check: ({ state }) => state.trades.some(t => t.buyerOwner === 'you' && t.aggressor === 'sell') },
+      { id: 'hit', text: 'Get filled while you wait (press Start market)', check: ({ state }) => state.trades.some(t => t.buyerOwner === 'you' && t.aggressor === 'sell') },
     ],
   },
   {
@@ -179,7 +178,7 @@ export const LESSONS: Lesson[] = [
   },
   {
     id: 'auction',
-    number: 10,
+    number: 9,
     title: 'One price for everyone',
     concept: 'Batch auction',
     task: 'This market is collecting orders for an auction — look, buyers bid MORE than sellers ask, yet nothing trades. Send a buy at $100.20, then press “Run auction” on the order book. Everyone trades at one price.',
@@ -207,7 +206,7 @@ export const LESSONS: Lesson[] = [
   },
   {
     id: 'market-maker',
-    number: 11,
+    number: 10,
     title: 'Be the market maker',
     concept: 'Spread · Inventory · News risk',
     task: 'Real markets work because someone always offers to buy AND sell. That’s you now. Keep a bid below and an ask above the price, earn the gap when others trade with you — and watch out: when news breaks, your old prices can be picked off.',
@@ -224,7 +223,7 @@ export const LESSONS: Lesson[] = [
   },
   {
     id: 'challenge',
-    number: 12,
+    number: 11,
     title: 'Challenge: buy 200 shares cheaply',
     concept: 'Final challenge · Execution cost',
     task: 'The market is live and other traders keep arriving. Buy 200 shares while paying as little as possible. Market orders are fast but cross the spread; limit orders are cheaper but you have to wait in the queue.',

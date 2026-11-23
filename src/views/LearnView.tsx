@@ -43,7 +43,7 @@ export function LearnView() {
         <div>
           <span className="eyebrow">How it works</span>
           <h1>One loop decides who trades with whom</h1>
-          <p>Every exchange — NASDAQ, the London Stock Exchange, Coinbase — runs a matching engine. Ours is about 60 lines for continuous matching, plus a batch auction. Here is all of it that matters.</p>
+          <p>Every exchange — NASDAQ, the London Stock Exchange, Coinbase — runs a matching engine. Ours is about 150 lines for continuous matching and 150 for the batch auction. Here is the part that decides who trades.</p>
         </div>
       </div>
       <div className="learn-grid">

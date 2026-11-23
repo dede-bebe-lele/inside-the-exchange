@@ -202,7 +202,7 @@ describe('portfolio', () => {
   it('credits the user when their resting order is hit by someone else', () => {
     let s = submitOrder(createInitialState(), 'sell', 'limit', 10, 100.05);
     s = submitOrder(s, 'buy', 'market', 4, undefined, 'market');
-    expect(s.portfolio).toEqual({ shares: -4, cash: STARTING_CASH + 400.2 });
+    expect(s.portfolio).toMatchObject({ shares: -4, cash: STARTING_CASH + 400.2 });
   });
 });
 

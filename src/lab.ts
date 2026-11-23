@@ -11,9 +11,14 @@
 import { clearAuction } from './auction';
 import { cancelOrder, createInitialState, executeOrder, submitOrder, type EngineState, type MatchingRule, type Owner } from './engine';
 
-export type Rng = () => number;
+import type { Rng } from './bots';
+export type { Rng };
 
-/** Small seeded random generator (mulberry32), so every experiment is repeatable. */
+/**
+ * Small seeded random generator, so every experiment is repeatable. This is "mulberry32",
+ * a well-known public-domain generator by Tommy Ettinger — not our own invention. The bit
+ * operations just mix the number thoroughly; any decent seeded generator would do.
+ */
 export function seeded(seed: number): Rng {
   let a = seed >>> 0;
   return () => {

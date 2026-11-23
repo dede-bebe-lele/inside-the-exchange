@@ -173,6 +173,29 @@ export function logLoss(net: Net, data: Sample[], scaler: Scaler): number {
 }
 
 /**
+ * Grouped importance: shuffle SEVERAL inputs together (the same reshuffle for all of them).
+ * Needed because our queue inputs overlap — "shares at my price" = "shares ahead" + "my size" —
+ * so shuffling only one of them underestimates how much the network uses the queue as a whole.
+ */
+export function groupImportance(net: Net, data: Sample[], scaler: Scaler, rng: Rng, columns: number[], repeats = 5): number {
+  const base = logLoss(net, data, scaler);
+  let rise = 0;
+  for (let r = 0; r < repeats; r++) {
+    const order = data.map((_, i) => i);
+    for (let i = order.length - 1; i > 0; i--) {
+      const k = Math.floor(rng() * (i + 1));
+      [order[i], order[k]] = [order[k], order[i]];
+    }
+    const shuffled = data.map((d, i) => ({ x: d.x.map((v, j) => (columns.includes(j) ? data[order[i]].x[j] : v)), y: d.y }));
+    rise += logLoss(net, shuffled, scaler) - base;
+  }
+  return rise / repeats;
+}
+
+/** The three inputs that describe the queue at my price. */
+export const QUEUE_COLUMNS = ['ahead', 'level', 'share'].map(k => FEATURES.findIndex(f => f.key === k));
+
+/**
  * Permutation importance: shuffle ONE input across the test examples (so it carries no
  * information) and measure how much worse the predictions get (how much the loss rises).
  * A big rise = the network relies on that input. Near zero = it ignores it.

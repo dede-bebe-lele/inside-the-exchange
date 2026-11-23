@@ -92,9 +92,11 @@ type TopBarProps = {
   onToggleBots: () => void;
   onSpeed: (s: string) => void;
   onReset: () => void;
+  /** Hide the market controls (used while the first-visit story runs). */
+  locked?: boolean;
 };
 
-export function TopBar({ state, prevPrice, bestBid, bestAsk, spread, botsOn, speed, onToggleBots, onSpeed, onReset }: TopBarProps) {
+export function TopBar({ state, prevPrice, bestBid, bestAsk, spread, botsOn, speed, onToggleBots, onSpeed, onReset, locked }: TopBarProps) {
   const change = state.lastPrice - state.openPrice;
   const dir = state.lastPrice > prevPrice ? 'up' : state.lastPrice < prevPrice ? 'down' : '';
   const volume = state.trades.reduce((s, t) => s + t.quantity, 0);
@@ -143,7 +145,7 @@ export function TopBar({ state, prevPrice, bestBid, bestAsk, spread, botsOn, spe
           <b>{state.portfolio.shares} sh</b>
         </div>
       </div>
-      <div className="topbar-actions">
+      <div className="topbar-actions" hidden={locked}>
         <button data-tour="market" className={`btn live${botsOn ? ' on' : ''}`} onClick={onToggleBots} aria-pressed={botsOn} title="Simulated traders keep sending orders">
           {botsOn ? <Pause size={14} /> : <Play size={14} />}
           <span className="lbl">{botsOn ? 'Market live' : 'Start market'}</span>
