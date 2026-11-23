@@ -94,3 +94,20 @@ describe('simulated market participants', () => {
     expect(s.portfolio.shares).toBe(0); // bots never touch the user's account
   });
 });
+
+describe('mission tasks are checked by the real engine', () => {
+  it("each mission's suggested order completes its first task", () => {
+    for (const m of LESSONS.filter(l => l.id !== 'challenge')) {
+      const { state, report } = executeOrder(m.build(), m.order.side, m.order.type, m.order.quantity, m.order.price);
+      expect(m.tasks[0].check({ state, reports: [report] }), m.id).toBe(true);
+    }
+  });
+
+  it('the pro-rata task only passes under the pro-rata rule', () => {
+    const m = LESSONS.find(l => l.id === 'pro-rata')!;
+    const fifo = executeOrder(m.build(), 'buy', 'market', 50).report;
+    const pr = executeOrder(setRule(m.build(), 'pro-rata'), 'buy', 'market', 50).report;
+    expect(m.tasks[1].check({ state: m.build(), reports: [fifo] })).toBe(false);
+    expect(m.tasks[1].check({ state: m.build(), reports: [pr] })).toBe(true);
+  });
+});

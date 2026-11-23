@@ -106,6 +106,8 @@ export type EngineState = {
   activity: ActivityEvent[];
   portfolio: Portfolio;
   rule: MatchingRule;
+  /** Largest order allowed (defaults to MAX_QUANTITY; the live BTC book counts in satoshis). */
+  maxQuantity?: number;
 };
 
 export const TICK_SIZE = 0.01;
@@ -167,11 +169,11 @@ export function createInitialState(): EngineState {
 }
 
 /** Returns a human-readable validation error, or null when the order is valid. */
-export function validateOrder(type: OrderType, quantity: number, limitPrice?: number): string | null {
+export function validateOrder(type: OrderType, quantity: number, limitPrice?: number, maxQuantity = MAX_QUANTITY): string | null {
   if (!Number.isFinite(quantity) || !Number.isInteger(quantity) || quantity <= 0) {
     return 'Quantity must be a positive whole number of shares.';
   }
-  if (quantity > MAX_QUANTITY) return `Quantity cannot exceed ${MAX_QUANTITY.toLocaleString('en-US')} shares.`;
+  if (quantity > maxQuantity) return `Quantity cannot exceed ${maxQuantity.toLocaleString('en-US')}.`;
   if (type === 'limit') {
     if (limitPrice === undefined || !Number.isFinite(limitPrice) || limitPrice <= 0) {
       return 'Limit price must be a positive number.';
@@ -233,7 +235,7 @@ export function executeOrder(
   limitPrice?: number,
   owner: Owner = 'you',
 ): { state: EngineState; report: ExecutionReport } {
-  const error = validateOrder(type, quantity, limitPrice);
+  const error = validateOrder(type, quantity, limitPrice, state.maxQuantity);
   if (error) throw new Error(error);
 
   const price = type === 'limit' ? roundToTick(limitPrice as number) : undefined;
@@ -369,7 +371,7 @@ export function submitOrder(
 
 /** Dry-run an order: what WOULD happen, without changing anything. Null if invalid. */
 export function previewOrder(state: EngineState, side: Side, type: OrderType, quantity: number, limitPrice?: number): ExecutionReport | null {
-  if (validateOrder(type, quantity, limitPrice)) return null;
+  if (validateOrder(type, quantity, limitPrice, state.maxQuantity)) return null;
   return executeOrder(state, side, type, quantity, limitPrice).report;
 }
 

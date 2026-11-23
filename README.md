@@ -1,52 +1,98 @@
-# Inside the Exchange — Interactive Stock Exchange Simulator
+# Inside the Exchange
 
-An educational, fully interactive simulator of a stock exchange **matching engine**.
-Place market and limit orders, watch them walk the order book, and see — step by step —
-exactly why each trade happened under **price-time priority**.
+**When you tap “Buy” in a trading app, who sells to you — and why them?**
 
-> Educational only. Not connected to any real exchange, broker or market data. Not investment advice.
+You don't buy from “the market”. Every stock exchange runs a program called a **matching engine** that picks the exact orders you trade with, using a strict rule: *best price first, then whoever was first in line*. This project is a working matching engine in the browser that lets you see that rule, change it, and test it on a real order book.
 
-## Features
+**Live:** https://dede-bebe-lele.github.io/inside-the-exchange/
 
-| | |
-|---|---|
-| **Order book** | Bids and asks sorted best-first, cumulative depth bars, each order's **queue position** at its price (`#2 of 3`), your own orders tagged `YOU`, one-click cancel. |
-| **Order ticket** | Market / limit, buy / sell, tick-size stepper, "use best bid/ask" and quick-quantity chips, live validation. |
-| **Pre-trade preview** | A dry run of your order: the rows it will hit are highlighted in the book, with fills, average price, slippage or price improvement, and what will rest or be cancelled — *before* you send it. |
-| **"What just happened"** | A plain-language, step-by-step explanation of every execution. |
-| **Recent trades tape** | Price, size, up/down tick, and the **aggressor** (who crossed the spread). |
-| **Price chart & metrics** | Last price and change, best bid, best ask, spread, mid. |
-| **Your account** | Shares, cash and mark-to-market P&L for the orders you trade. |
-| **Simulate market** | Bot traders post and take liquidity so the book comes alive (slow / normal / fast). |
-| **8 guided lessons** | Hand-built order books that each demonstrate one concept: walking the book & slippage, FIFO time priority, price beats time, resting limit orders, price improvement, partial fills, running out of liquidity, pro-rata vs FIFO. Progress is remembered. |
-| **How it works** | The matching algorithm in steps and pseudocode, plus a glossary. |
-| **Engine log** | Every order and cancel the engine processed, in sequence. |
+> Educational simulator. It places no real orders, connects to no broker, and is not investment advice.
 
-## How the matching engine works
+## What you can do with it
 
-1. Every incoming order gets a sequence number (its place in time).
-2. The opposite side of the book is sorted by **best price, then earliest time**.
-3. While the incoming order has shares left and the best opposite order is at an acceptable price
-   (any price for a market order; at or better than the limit for a limit order), they trade.
-4. Each trade executes at the **resting order's price** for `min(incoming.remaining, resting.remaining)`.
-5. A fully filled resting order leaves the book; a partially filled one keeps its place in the queue.
-6. Leftover shares: a **limit** order rests in the book; a **market** order is cancelled (immediate-or-cancel).
+### Simulator
+- **The queue, made visible.** Each waiting order is a chip with a trader's name. Its width is its size, and chips sit left to right in the order they arrived, so time priority is something you can see.
+- **Preview before you send.** As you type an order, the engine runs it as a dry run. The exact chips it would trade with are hatched, under either rule, and the ticket explains every fill in plain words.
+- **Change the rule.** Switch between **Price → Time** (FIFO, used by stock exchanges like NASDAQ) and **Price → Size** (pro-rata, used in some futures markets). The preview table shows who would trade with you under each rule.
+- **Start the market.** Simulated traders post and take orders, so you can join a queue and wait to be filled.
+- Depth chart, trade-price chart, trade tape showing buyer, seller and aggressor, and your account with profit and loss.
 
-Prices use a $0.01 tick size. The engine (`src/engine.ts`) is pure — every call returns a new state — which keeps it easy to test and safe for React.
+### First visit: four clicks, two predictions
+1. Buy 45 shares and see that you paid more than the price on screen.
+2. Bid instead, and join the queue behind another trader.
+3. **Predict:** a seller arrives, so who gets the shares?
+4. **Predict:** with the pro-rata rule, how many do you get?
+
+Every number in the story is computed by the engine, not written in advance.
+
+### Missions
+Nine order books built by hand, each showing one rule: walking the book, FIFO, price beats time, resting limits, price improvement, partial fills, running out of liquidity, and pro-rata vs FIFO. A final challenge asks you to buy 200 shares as cheaply as you can. The checklists tick themselves by checking the engine's real state.
+
+### Real market
+The **live Bitcoin order book** from Coinbase, with Kraken as a fallback, loaded straight from their public APIs. No key is needed and nothing is sent to the exchanges. Our own engine answers *“what would buying 1 BTC cost right now?”* It shows the average price, slippage in basis points, the number of price levels eaten, and the exact orders consumed.
+
+### How it works
+The algorithm in seven steps, and the actual allocation code. That code is read from `src/engine.ts` at build time, so it is the code that runs. The page also has a glossary and a list of what we simplified.
+
+## How the engine works
+
+```
+while the incoming order has shares left and the other side isn't empty:
+    level = every order at the best opposite price (oldest first)
+    if that price is not acceptable: stop            # limit orders only
+    take = min(shares left, shares in level)
+    split take among the level by the rule:
+        price-time → oldest order first, each filled completely
+        pro-rata   → in proportion to size; rounding leftovers to the oldest
+    trade at the level's price; remove used-up orders
+leftover: limit → waits in the book; market → cancelled
+```
+
+The engine (`src/engine.ts`) is pure. Every call returns a new state and never changes the old one, which makes it easy to test, to preview and to rewind.
+
+## What is computed and what is not
+
+Everything on the trading screens is computed by the engine from the user's input: fills, prices, queue positions, the hatched preview, the charts and the explanations. The only fixed data is the starting order books of the missions, which are listed in `src/lessons.ts`. The simulated traders use random numbers. Those numbers are drawn outside React's state updater and replayed inside it, so each step stays deterministic.
+
+## What we simplified
+- One stock, a $0.01 tick, and two order types (market and limit). Real exchanges have more types, such as stop and iceberg orders.
+- Plain pro-rata. Real futures markets often add a top-order bonus or minimum allocations.
+- No opening or closing auctions, fees or circuit breakers.
+- In Real market, each price level is split into equal orders, because public data gives only the total per price.
+
+## Tests
+
+`npm test` runs 40 tests. They cover:
+- market and limit orders, partial fills, and FIFO queue order;
+- price priority across levels, and never trading through a limit price;
+- conservation of shares, and the book never being left crossed;
+- pro-rata allocation invariants, checked on 500 random cases;
+- immutability of the engine state;
+- every mission's claims and task checks;
+- 2,000 steps of simulated traders.
 
 ## Project structure
 
-```
-src/
-  engine.ts            matching engine (pure functions) — the core of the project
-  engine.test.ts       unit tests: market/limit, partial fills, FIFO, no trade-through, immutability…
-  bots.ts              simulated market participants
-  lessons.ts           guided lessons (scenario books + takeaways)
-  lessons.test.ts      verifies each lesson really shows what its takeaway claims
-  format.ts            formatting + plain-language narration of executions
-  App.tsx              app state and layout
-  components/          OrderBook, OrderTicket, Panels (trades, chart, log, lessons…), Learn
-```
+| File | What's in it |
+|---|---|
+| `src/engine.ts` | The matching engine: validation, price-time and pro-rata allocation, execution reports |
+| `src/realMarket.ts` | Loads the live BTC book (Coinbase, then Kraken) and turns it into engine state |
+| `src/bots.ts` | Simulated traders |
+| `src/lessons.ts` | Missions, with their order books and auto-checked tasks |
+| `src/format.ts` | Formatting and the plain-language explanation of each execution |
+| `src/components/` | QueueBook (the visual order book), Ticket, Charts, Tape, Story, MissionCard, Shell |
+| `src/views/` | Simulator, Missions, Real market, How it works, Stats, Settings |
+
+## Things we didn't make ourselves
+
+| What | Why we chose it |
+|---|---|
+| React + Vite + TypeScript | Standard, fast tooling for an interactive page that has to run in any browser |
+| lucide-react icons | Clean, consistent icons; MIT licence |
+| Inter and JetBrains Mono (Google Fonts) | Readable text and evenly spaced numbers for prices; SIL Open Font Licence |
+| Coinbase / Kraken public market-data APIs | Real order books with no key and no sign-up, readable from a browser |
+
+The charts, the order-book visualisation and the matching engine are our own code. There are no chart or trading libraries.
 
 ## Run locally
 
@@ -54,12 +100,12 @@ Requires Node.js 18+.
 
 ```bash
 npm install
-npm run dev        # open the localhost URL shown
-npm test           # run the test suite
-npm run build      # production build into dist/
+npm run dev     # open the localhost URL shown
+npm test
+npm run build
 ```
 
-## Deploy (GitHub Pages)
+Pushing to `main` runs the tests, builds and deploys to GitHub Pages (`.github/workflows/deploy.yml`).
 
-The workflow in `.github/workflows/deploy.yml` runs the tests, builds, and publishes to GitHub Pages on every push to `main`.
-One-time setup: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+## Licence
+MIT — see `LICENSE`.

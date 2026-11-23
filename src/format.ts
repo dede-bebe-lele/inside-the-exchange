@@ -7,6 +7,11 @@ export const shares = (n: number): string => `${n.toLocaleString('en-US')} sh`;
 
 export const signed = (n: number, digits = 2): string => `${n >= 0 ? '+' : '−'}${Math.abs(n).toFixed(digits)}`;
 
+const NAMES = ['Ana', 'Ben', 'Chen', 'Dina', 'Eli', 'Fatima', 'Gus', 'Hana', 'Ivan', 'Jade', 'Kofi', 'Lea', 'Mia', 'Noah', 'Omar', 'Pia', 'Raj', 'Sara', 'Tomas', 'Uma', 'Vik', 'Wen', 'Yara', 'Zane'];
+
+/** A stable, friendly name for a simulated trader, so orders feel like people. */
+export const traderName = (orderId: number): string => NAMES[(orderId * 7) % NAMES.length];
+
 export const opposite = (side: Side): Side => (side === 'buy' ? 'sell' : 'buy');
 
 export type Narrative = {
@@ -26,9 +31,13 @@ export function narrate(r: ExecutionReport, opts: { future: boolean; queuePositi
   const other = r.side === 'buy' ? 'sell' : 'buy';
 
   const steps = r.fills.map((fill, i) => {
-    const who = fill.restingOwner === 'you' ? `your own ${other}` : other;
-    const after = fill.restingRemaining === 0 ? `#${fill.restingOrderId} is ${f ? 'fully filled and leaves' : 'fully filled and left'} the book` : `#${fill.restingOrderId} keeps ${shares(fill.restingRemaining)} at the front of its queue`;
-    return `${i + 1}. ${f ? 'Match' : 'Matched'} ${shares(fill.quantity)} with ${who} order #${fill.restingOrderId} at ${usd(fill.price)} — ${after}.`;
+    const name = fill.restingOwner === 'you' ? 'your own order' : traderName(fill.restingOrderId);
+    const after =
+      fill.restingRemaining === 0
+        ? `${f ? 'that order is used up' : 'that order was used up'}`
+        : `${f ? 'they keep' : 'they kept'} ${shares(fill.restingRemaining)}${r.rule === 'pro-rata' ? '' : ' and stay first in line'}`;
+    const verbFill = r.side === 'buy' ? (f ? 'Buy' : 'Bought') : f ? 'Sell' : 'Sold';
+    return `${i + 1}. ${verbFill} ${shares(fill.quantity)} ${r.side === 'buy' ? 'from' : 'to'} ${name} at ${usd(fill.price)} — ${after}.`;
   });
 
   if (r.restingQuantity > 0) {
