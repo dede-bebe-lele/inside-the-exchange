@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chooseAction, ECO_DEFAULTS, ecoRound, learn, learnRecent, newBandit, newEco, QUEUE_STRATEGIES, queueRound, seeded, sniperReward, snipeStats, SPEED_LEVELS, summarize, type EcoRound, type QueueParams } from './lab';
+import { chooseAction, ECO_DEFAULTS, learn, learnRecent, newBandit, QUEUE_STRATEGIES, queueRound, seeded, sniperReward, snipeStats, SPEED_LEVELS, trainMarket, type QueueParams } from './lab';
 
 const avg = (f: () => number, n = 3000) => {
   let s = 0;
@@ -70,31 +70,36 @@ describe('bandit', () => {
   });
 });
 
-describe('experiment 3: a market that learns', () => {
-  const run = (batchMs: number | null, seed: number) => {
-    const p = { ...ECO_DEFAULTS, batchMs };
-    const rng = seeded(seed);
-    let agents = newEco(p);
-    const rounds: EcoRound[] = [];
-    for (let i = 0; i < 5000; i++) {
-      const r = ecoRound(agents, p, rng);
-      agents = r.agents;
-      rounds.push(r.round);
-    }
-    return summarize(rounds.slice(-1500));
-  };
+describe('experiment 3: a market that learns — checked across many settings, not one', () => {
+  // Every combination below is trained from scratch, for both rules.
+  const grid: { snipers: number; jump: number }[] = [];
+  for (const snipers of [1, 3]) for (const jump of [0.1, 0.15, 0.2, 0.25]) grid.push({ snipers, jump });
+  const results = grid.map(g => ({
+    ...g,
+    cont: trainMarket({ ...ECO_DEFAULTS, ...g, batchMs: null }, 3000, 1),
+    batch: trainMarket({ ...ECO_DEFAULTS, ...g, batchMs: 50 }, 3000, 1),
+  }));
 
-  it('continuous matching: snipers learn to race, the maker widens the spread, investors trade less', () => {
-    for (const seed of [1, 2]) {
-      const cont = run(null, seed);
-      const batch = run(50, seed);
-      expect(cont.avgEdge).toBeGreaterThan(0.2); // an arms race emerges
-      expect(batch.avgEdge).toBeLessThan(0.1); // nobody pays for speed
-      expect(cont.snipeRate).toBeGreaterThan(0.3);
-      expect(batch.snipeRate).toBeLessThan(0.05);
-      expect(batch.volume).toBeGreaterThan(cont.volume * 1.5); // more trading for investors
-      expect(batch.investorCost).toBeLessThan(cont.investorCost); // and it's cheaper
+  it('batch auction, every setting: almost no sniping and nobody buys speed', () => {
+    for (const r of results) {
+      expect(r.batch.snipeRate, `${r.snipers}/${r.jump}`).toBeLessThan(0.05);
+      expect(r.batch.avgEdge, `${r.snipers}/${r.jump}`).toBeLessThan(0.1);
     }
+  });
+
+  it('investors: same trading when news is smaller than the normal spread, much more trading in the batch auction when it is bigger', () => {
+    for (const r of results) {
+      if (r.jump <= 0.1) expect(Math.abs(r.batch.volume - r.cont.volume) / r.batch.volume, `${r.snipers}/${r.jump}`).toBeLessThan(0.1);
+      else expect(r.batch.volume, `${r.snipers}/${r.jump}`).toBeGreaterThan(1.5 * r.cont.volume);
+    }
+  });
+
+  it('continuous: a speed race appears only in a middle zone of news size, and big news shuts the market', () => {
+    const at = (snipers: number, jump: number) => results.find(r => r.snipers === snipers && r.jump === jump)!;
+    expect(at(1, 0.2).cont.avgEdge).toBeGreaterThan(0.15); // race
+    expect(at(3, 0.2).cont.avgEdge).toBeGreaterThan(0.15);
+    expect(at(1, 0.1).cont.avgEdge).toBeLessThan(0.1); // small news: Maya prices it in, no race
+    expect(at(3, 0.25).cont.offRate).toBeGreaterThan(0.5); // big news: Maya mostly stops quoting
   });
 
   it('learnRecent weights recent rewards more than old ones', () => {

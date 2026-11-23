@@ -54,16 +54,16 @@ export function Story({ state, setState, onClose, onDone }: Props) {
     );
   };
 
-  const step3 = (choice: string) => {
+  const step3 = (choice: number) => {
     const { state: next, report } = executeOrder(state, 'sell', 'market', 25, undefined, 'market');
     setState(next);
     const mine = got(report, myId);
-    const right = mine === 5 ? choice === 'rival' : choice === 'split';
+    const right = choice === mine; // checked against what the engine actually did
     finish(
       2,
       <p>
-        <span className={`verdict ${right ? 'right' : 'wrong'}`}>{right ? 'Right! ' : 'Not quite. '}</span>
-        {rival ? `${traderName(rival.id)} arrived first, so ${traderName(rival.id)} got ${got(report, rival.id)} shares and you got ${mine}.` : `You got ${mine}.`} Same price → <strong>first come, first served</strong>. This rule is called price-time priority.
+        <span className={`verdict ${right ? 'right' : 'wrong'}`}>{right ? 'Right! ' : `You got ${mine}. `}</span>
+        {rival ? `${traderName(rival.id)} was in line first, so ${traderName(rival.id)} got ${got(report, rival.id)} and you got ${mine}.` : `You got ${mine}.`} Same price → <strong>first come, first served</strong>. This rule is called price-time priority.
       </p>,
     );
   };
@@ -91,11 +91,15 @@ export function Story({ state, setState, onClose, onDone }: Props) {
       title: 'A seller brings 25 shares',
       body: (
         <>
-          <p className="q">You and {rival ? traderName(rival.id) : 'another buyer'} bid the same price. Who gets the shares?</p>
+          <p className="q">
+            You (10 shares) and {rival ? `${traderName(rival.id)} (${rival.size} shares)` : 'another buyer'} bid the same price. A seller brings 25. How many do <b>you</b> get?
+          </p>
           <div className="opts">
-            <button className="btn sm" onClick={() => step3('me')}>Me</button>
-            <button className="btn sm" onClick={() => step3('rival')}>{rival ? traderName(rival.id) : 'Them'}</button>
-            <button className="btn sm" onClick={() => step3('split')}>We split</button>
+            {[0, 5, 10].map(n => (
+              <button key={n} className="btn sm" onClick={() => step3(n)}>
+                {n}
+              </button>
+            ))}
           </div>
         </>
       ),
@@ -126,7 +130,8 @@ export function Story({ state, setState, onClose, onDone }: Props) {
         <span className="eyebrow">Start here · 1 minute</span>
         <h2 id="story-title">What happens when you tap “Buy”?</h2>
         <p>
-          You don't buy from “the market”. A program called a <b>matching engine</b> picks the exact people you trade with — by a strict rule. Four clicks, on the real order book below.
+          Every share price you see — in the news, in a pension fund, in a trading app — comes from a program called a <b>matching engine</b>. It decides exactly whose orders trade with whose, by a strict rule. Four clicks on
+          the (simulated) order book below.
         </p>
       </div>
       <ol className="story-steps" style={{ listStyle: 'none', margin: 0, padding: 0 }}>

@@ -29,7 +29,7 @@ export function Tape({ trades, fmtPrice = usd }: { trades: Trade[]; fmtPrice?: (
               const seller = t.sellerOwner === 'you' ? 'You' : traderName(t.sellerOrderId);
               return (
                 <tr key={t.id} className={t.timestamp === newest ? 'new' : ''}>
-                  <td className={t.aggressor === 'buy' ? 'bid-c' : 'ask-c'}>
+                  <td className={t.aggressor === 'buy' ? 'bid-c' : t.aggressor === 'sell' ? 'ask-c' : ''}>
                     {fmtPrice(t.price)} <span className="muted">{arrow}</span>
                   </td>
                   <td className="num">{t.quantity}</td>
@@ -37,7 +37,7 @@ export function Tape({ trades, fmtPrice = usd }: { trades: Trade[]; fmtPrice?: (
                     {buyer} ← {seller}
                   </td>
                   <td>
-                    <span className={`who-tag ${t.aggressor}`}>{t.aggressor === 'buy' ? 'buyer' : 'seller'}</span>
+                    <span className={`who-tag ${t.aggressor}`}>{t.aggressor === 'auction' ? 'auction' : t.aggressor === 'buy' ? 'buyer' : 'seller'}</span>
                     {(t.buyerOwner === 'you' || t.sellerOwner === 'you') && <span className="you-tag">YOU</span>}
                   </td>
                 </tr>

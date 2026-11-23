@@ -1,7 +1,7 @@
 // Missions: each one loads a small, hand-made order book, pre-fills an order that
 // demonstrates exactly one concept of the matching engine, and lists tasks that the
 // app ticks off by checking the engine's real state and execution reports.
-import { createInitialState, STARTING_CASH, stateFromBook, type EngineState, type ExecutionReport, type OrderType, type Side } from './engine';
+import { createInitialState, stateFromBook, type EngineState, type ExecutionReport, type OrderType, type Side } from './engine';
 
 /** What a task can look at: the current book and the user's orders since the mission started. */
 export type MissionContext = { state: EngineState; reports: ExecutionReport[] };
@@ -10,10 +10,11 @@ export type Task = { id: string; text: string; check: (ctx: MissionContext) => b
 
 const prices = (r: ExecutionReport) => new Set(r.fills.map(f => f.price));
 
-/** Average price the user paid per share (cash spent ÷ shares held), or null. */
+/** Average price the user paid per share bought, from the user's own buy trades. */
 export function averageCost(state: EngineState): number | null {
-  const { shares, cash } = state.portfolio;
-  return shares > 0 ? (STARTING_CASH - cash) / shares : null;
+  const buys = state.trades.filter(t => t.buyerOwner === 'you');
+  const qty = buys.reduce((a, t) => a + t.quantity, 0);
+  return qty > 0 ? buys.reduce((a, t) => a + t.price * t.quantity, 0) / qty : null;
 }
 
 export type Lesson = {

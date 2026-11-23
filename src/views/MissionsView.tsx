@@ -1,9 +1,9 @@
 import { CheckCircle2, Trophy } from 'lucide-react';
 import type { Lesson } from '../lessons';
 
-type Props = { missions: Lesson[]; progress: Record<string, string[]>; onStart: (m: Lesson) => void };
+type Props = { missions: Lesson[]; progress: Record<string, string[]>; onStart: (m: Lesson) => void; onResetProgress: () => void };
 
-export function MissionsView({ missions, progress, onStart }: Props) {
+export function MissionsView({ missions, progress, onStart, onResetProgress }: Props) {
   const done = missions.filter(m => m.tasks.every(t => progress[m.id]?.includes(t.id))).length;
   return (
     <div className="page">
@@ -13,6 +13,11 @@ export function MissionsView({ missions, progress, onStart }: Props) {
           <h1>Learn by breaking things</h1>
           <p>Each mission loads a small order book built to show one rule of the matching engine. The checklist ticks itself when the engine sees you do it.</p>
         </div>
+        {done > 0 && (
+          <button className="btn" onClick={onResetProgress}>
+            Clear progress
+          </button>
+        )}
       </div>
       <div className="mission-grid">
         {missions.map(m => {

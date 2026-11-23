@@ -3,7 +3,8 @@
 // When an order is previewed, the shares it would take are hatched on the exact chips
 // the engine would trade with — under FIFO the front chips, under pro-rata every chip.
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
-import { queuePositions, spread as getSpread, midPrice, type EngineState, type ExecutionReport, type MatchingRule, type Order } from '../engine';
+import type { AuctionResult } from '../auction';
+import { queuePositions, spread as getSpread, midPrice, type EngineState, type ExecutionReport, type MarketMode, type MatchingRule, type Order } from '../engine';
 import { traderName, usd } from '../format';
 
 type Level = { price: number; orders: Order[]; total: number };
@@ -14,6 +15,10 @@ type Props = {
   onPickPrice?: (price: number) => void;
   onCancel?: (id: number) => void;
   onRuleChange?: (rule: MatchingRule) => void;
+  onModeChange?: (mode: MarketMode) => void;
+  /** Batch mode: what the auction would do if it ran now (computed by clearAuction). */
+  auction?: AuctionResult | null;
+  onRunAuction?: () => void;
   levels?: number;
   fmtQty?: (n: number) => string;
   fmtPrice?: (p: number) => string;
@@ -46,6 +51,9 @@ export function QueueBook({
   onPickPrice,
   onCancel,
   onRuleChange,
+  onModeChange,
+  auction,
+  onRunAuction,
   levels: maxLevels = 7,
   fmtQty = n => n.toLocaleString('en-US'),
   fmtPrice = p => usd(p),
@@ -57,7 +65,15 @@ export function QueueBook({
   const asks = toLevels(state.asks, maxLevels);
   const bids = toLevels(state.bids, maxLevels);
   const maxTotal = Math.max(1, ...asks.map(l => l.total), ...bids.map(l => l.total));
-  const willFill = new Map(preview?.fills.map(f => [f.restingOrderId, f.quantity]) ?? []);
+  const batch = state.mode === 'batch';
+  // Hatched = shares that will trade: your previewed order (continuous) or the auction (batch).
+  const willFill = new Map<number, number>();
+  if (batch && auction) {
+    for (const t of auction.trades) {
+      willFill.set(t.buyerOrderId, (willFill.get(t.buyerOrderId) ?? 0) + t.quantity);
+      willFill.set(t.sellerOrderId, (willFill.get(t.sellerOrderId) ?? 0) + t.quantity);
+    }
+  } else for (const f of preview?.fills ?? []) willFill.set(f.restingOrderId, f.quantity);
   const askQ = queuePositions(state.asks);
   const bidQ = queuePositions(state.bids);
   const proRata = state.rule === 'pro-rata';
@@ -102,7 +118,7 @@ export function QueueBook({
           {fill ? (
             <>
               <br />
-              Your preview takes <b>{fmtQty(fill)}</b> from it.
+              {batch ? 'The auction would trade' : 'Your preview takes'} <b>{fmtQty(fill)}</b> {batch ? 'of it' : 'from it'}.
             </>
           ) : null}
           {o.owner === 'you' && onCancel ? (
@@ -141,7 +157,7 @@ export function QueueBook({
                 onMouseEnter={e => showTip(e, o, queue.get(o.id), level)}
                 onFocus={e => showTip(e as unknown as MouseEvent, o, queue.get(o.id), level)}
                 onBlur={() => setTip(null)}
-                onClick={() => mine && onCancel?.(o.id)}
+                onClick={e => (mine && onCancel ? onCancel(o.id) : showTip(e, o, queue.get(o.id), level))}
                 aria-label={`${mine ? 'Your order' : 'Order'} ${o.id}: ${fmtQty(o.remaining)} ${unit} at ${fmtPrice(o.price as number)}`}
               >
                 {take > 0 && <i className="bite" style={{ width: `${(take / o.remaining) * 100}%` }} />}
@@ -158,6 +174,16 @@ export function QueueBook({
     <section className={`card ${className}`} aria-label={title}>
       <div className="card-head">
         <h3>{title}</h3>
+        {onModeChange && (
+          <div className="seg" role="group" aria-label="When orders are matched">
+            <button className={batch ? '' : 'on'} aria-pressed={!batch} onClick={() => onModeChange('continuous')}>
+              Continuous
+            </button>
+            <button className={batch ? 'on' : ''} aria-pressed={batch} onClick={() => onModeChange('batch')}>
+              Batch auction
+            </button>
+          </div>
+        )}
         {onRuleChange && (
           <div className="seg" role="group" aria-label="Matching rule">
             <button className={proRata ? '' : 'on'} aria-pressed={!proRata} onClick={() => onRuleChange('price-time')}>
@@ -169,11 +195,32 @@ export function QueueBook({
           </div>
         )}
       </div>
+      {batch && (
+        <div className="auction-bar">
+          <span>
+            {auction?.price != null ? (
+              <>
+                Orders are <b>collected, not matched</b>. If the auction ran now: <b>{fmtQty(auction.volume)}</b> {unit} would trade at one price, <b>{fmtPrice(auction.price)}</b>.
+              </>
+            ) : (
+              <>
+                Orders are <b>collected, not matched</b>. Right now no buyer and seller overlap, so an auction would trade nothing.
+              </>
+            )}
+            {state.pending.length > 0 && ` ${state.pending.length} market order${state.pending.length > 1 ? 's' : ''} waiting.`}
+          </span>
+          {onRunAuction && (
+            <button className="btn primary sm" onClick={onRunAuction}>
+              Run auction
+            </button>
+          )}
+        </div>
+      )}
       {onRuleChange && (
         <p className="rule-note">
           {proRata ? (
             <>
-              <b>Pro-rata:</b> at one price, every order gets a slice of each trade in proportion to its size. Arriving first doesn't help.
+              <b>Pro-rata:</b> at one price, every order gets a slice of each trade in proportion to its size. Arriving first barely helps (only rounding leftovers go to the earliest).
             </>
           ) : (
             <>
@@ -208,9 +255,17 @@ export function QueueBook({
       <div className="book-side">
         {asks.length ? [...asks].reverse().map(l => row(l, 'ask')) : <div className="empty-side">No one is selling.</div>}
       </div>
-      <div className="spread-row">
+      <div className={`spread-row${spread !== null && spread <= 0 ? ' crossed' : ''}`}>
         <span>
-          Spread<b>{spread === null ? '—' : fmtPrice(spread)}</b>
+          {spread !== null && spread <= 0 ? (
+            <>
+              Crossed<b>buyers bid more than sellers ask</b>
+            </>
+          ) : (
+            <>
+              Spread<b>{spread === null ? '—' : fmtPrice(spread)}</b>
+            </>
+          )}
         </span>
         <span>
           Mid<b>{mid === null ? '—' : fmtPrice(mid)}</b>

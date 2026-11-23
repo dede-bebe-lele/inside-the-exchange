@@ -27,11 +27,13 @@ const TERMS: [string, string][] = [
 
 const SIMPLIFIED = [
   'One stock and one price grid ($0.01 ticks). Real exchanges run thousands of books at once, in microseconds.',
-  'Only two order types. Real exchanges also have stop, iceberg (hidden size), and immediate-or-cancel limit orders, among others.',
+  'Only market and limit orders. Real exchanges also have stop, iceberg (hidden size) and immediate-or-cancel orders, among others.',
   'Our pro-rata is the plain version. Real futures markets often add a “top order” bonus or a minimum allocation.',
-  'No opening or closing auction. Real stock exchanges start and end the day with a single batch auction instead of continuous matching.',
-  'No fees, no market makers with obligations, no circuit breakers that pause trading.',
-  'In “Real market”, each price level is split into equal orders, because public data shows only totals per price, not every order.',
+  'Our batch auction uses the standard rule (most shares traded, then least left over, then closest to the last price), but real opening auctions also publish an indicative price before they run.',
+  'You may sell shares you don’t own (short selling) and there are no fees. Real brokers limit both.',
+  'Your own orders never trade with each other (self-trade prevention), but the simulated traders are one crowd and may.',
+  'In many countries your app sends orders straight to an exchange. In the US, many retail orders go first to a “wholesaler”, which fills them at prices tied to the exchange’s best bid and ask — so the exchange’s book still sets the price.',
+  'In “Real market”, each price level is split into equal orders to draw it, because public data shows only totals per price.',
 ];
 
 export function LearnView() {
@@ -41,7 +43,7 @@ export function LearnView() {
         <div>
           <span className="eyebrow">How it works</span>
           <h1>One loop decides who trades with whom</h1>
-          <p>Every exchange — NASDAQ, the London Stock Exchange, Coinbase — runs a matching engine. Ours is about 60 lines. Here is all of it that matters.</p>
+          <p>Every exchange — NASDAQ, the London Stock Exchange, Coinbase — runs a matching engine. Ours is about 60 lines for continuous matching, plus a batch auction. Here is all of it that matters.</p>
         </div>
       </div>
       <div className="learn-grid">

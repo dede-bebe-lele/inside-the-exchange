@@ -13,6 +13,7 @@ type Props = {
   error: string | null;
   preview: ExecutionReport | null;
   altPreview: ExecutionReport | null;
+  auctionWithMine?: { price: number | null; mine: number } | null;
   queuePosition?: number;
   bestBid: number | null;
   bestAsk: number | null;
@@ -22,7 +23,7 @@ type Props = {
 
 const QUICK = [10, 25, 50, 100];
 
-export function Ticket({ ticket, onChange, onSubmit, error, preview, altPreview, queuePosition, bestBid, bestAsk, myOrders, onCancel }: Props) {
+export function Ticket({ ticket, onChange, onSubmit, error, preview, altPreview, auctionWithMine, queuePosition, bestBid, bestAsk, myOrders, onCancel }: Props) {
   const set = (patch: Partial<TicketState>) => onChange({ ...ticket, ...patch });
   const nudge = (ticks: number) => {
     const p = Number(ticket.price);
@@ -130,7 +131,14 @@ export function Ticket({ ticket, onChange, onSubmit, error, preview, altPreview,
                 </div>
               )}
               {story.insight && <p className="insight">{story.insight}</p>}
-              {altPreview && <RuleComparison a={preview} b={altPreview} />}
+              {auctionWithMine && (
+                <p className="insight">
+                  {auctionWithMine.price === null
+                    ? 'If the auction ran right now, nothing would trade — no buyer and seller would agree on a price.'
+                    : `If the auction ran right now, everything would trade at ${usd(auctionWithMine.price)} and you would get ${auctionWithMine.mine} share${auctionWithMine.mine === 1 ? '' : 's'}.`}
+                </p>
+              )}
+              {preview.status !== 'queued' && altPreview && <RuleComparison a={preview} b={altPreview} />}
             </>
           ) : null}
         </div>

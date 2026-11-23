@@ -1,111 +1,130 @@
 # Inside the Exchange
 
-**When you tap “Buy” in a trading app, who sells to you — and why them?**
+**When you buy a share, who sells it to you — and why them?**
 
-You don't buy from “the market”. Every stock exchange runs a program called a **matching engine** that picks the exact orders you trade with, using a strict rule: *best price first, then whoever was first in line*. This project is a working matching engine in the browser that lets you see that rule, change it, and test it on a real order book.
+Every share price you see, in the news, in a pension fund or in a trading app, is set by a program called a **matching engine** inside an exchange. It decides exactly whose orders trade with whose, by a strict rule: *best price first, then a tie-break*. This project is a working matching engine in the browser. You can see that rule, change it, and measure what it does to a market.
 
 **Live:** https://dede-bebe-lele.github.io/inside-the-exchange/
 
-> Educational simulator. It places no real orders, connects to no broker, and is not investment advice.
+> Educational simulator. It places no real orders and is not investment advice. The Real market page only *reads* public data.
 
-## What you can do with it
+## The one idea
+
+**The tie-break rule decides who you trade with, and so what traders compete on.**
+
+- **Price → Time (FIFO):** at the same price, the earliest order trades first, so traders race for *speed*.
+- **Price → Size (pro-rata):** at the same price, the trade is split by size, so traders post *bigger* orders.
+- **Batch auction:** orders are collected and traded together at one price, so a microsecond stops mattering.
+
+Every part of the site serves this one idea.
+
+## What you can do
 
 ### Simulator
-- **The queue, made visible.** Each waiting order is a chip with a trader's name. Its width is its size, and chips sit left to right in the order they arrived, so time priority is something you can see.
-- **Preview before you send.** As you type an order, the engine runs it as a dry run. The exact chips it would trade with are hatched, under either rule, and the ticket explains every fill in plain words.
-- **Change the rule.** Switch between **Price → Time** (FIFO, used by stock exchanges like NASDAQ) and **Price → Size** (pro-rata, used in some futures markets). The preview table shows who would trade with you under each rule.
-- **Start the market.** Simulated traders post and take orders, so you can join a queue and wait to be filled.
-- Depth chart, trade-price chart, trade tape showing buyer, seller and aggressor, and your account with profit and loss.
+- **The queue, made visible.** Each waiting order is a chip with a trader's name. Its width is its size, and chips sit left to right in arrival order. Hover or tap a chip to see its place in line.
+- **Preview before you send.** The engine runs your order as a dry run. The exact chips it would trade with are hatched, and the ticket explains each fill in words. A table shows who you would trade with under the other rule.
+- **Three ways to match:** Price → Time, Price → Size, and **Batch auction**. In batch mode, orders wait and the book may "cross" (a bid above an ask). The auction then trades everything that can trade at **one price**: the price where the most shares change hands. Its supply and demand curves are drawn live.
+- **Start the market:** simulated traders keep sending orders. In batch mode an auction runs every few ticks.
+- **Self-trade prevention:** your order never trades with your own waiting order. That order is cancelled instead, which is a real exchange feature.
 
 ### First visit: four clicks, two predictions
 1. Buy 45 shares and see that you paid more than the price on screen.
 2. Bid instead, and join the queue behind another trader.
-3. **Predict:** a seller arrives, so who gets the shares?
-4. **Predict:** with the pro-rata rule, how many do you get?
+3. **Predict:** a seller brings 25 shares, so how many do *you* get?
+4. **Predict:** under the pro-rata rule, how many now?
 
-Every number in the story is computed by the engine, not written in advance.
+Every answer is checked against what the engine actually did.
 
 ### Missions
-Nine order books built by hand, each showing one rule: walking the book, FIFO, price beats time, resting limits, price improvement, partial fills, running out of liquidity, and pro-rata vs FIFO. A final challenge asks you to buy 200 shares as cheaply as you can. The checklists tick themselves by checking the engine's real state.
+Nine hand-built order books, each showing one rule. The checklists tick themselves by checking the engine's state. The last mission is a challenge: buy 200 shares as cheaply as you can.
 
-### Rule Lab — experiments + learning AI traders
-The matching rule doesn't just decide one trade. It decides **what traders compete on**. Three experiments run thousands of rounds through the same engine:
+### Rule Lab
+Three experiments that send thousands of rounds through the same engine:
+1. **Speed or size?** A trial-and-error learner, a simple epsilon-greedy bandit, is never told the rule. It learns to pay for speed under FIFO and to post big orders under pro-rata. Next to its estimates we show the **true average** of every choice, measured separately, so you can check that it learned correctly, and see where the answer flips as you move the sliders.
+2. **The sniping race**, *inspired by* Budish, Cramton & Shim (*The High-Frequency Trading Arms Race*, QJE 2015). News makes a market maker's price stale, and she races a sniper to fix it. Continuously, the first message wins. In our batch auction, all messages that arrive within the same few milliseconds go into one real auction. The learner pays for speed in the first case and not in the second.
+3. **A market that learns.** Many learners at once: a market maker (who may also refuse to quote), 1–5 snipers, and investors who trade less when spreads are wide. Every profit is read from the engine's own trades. A **robustness check** retrains both markets for 16 settings, so you can see where each result holds and where it doesn't.
 
-1. **Speed or size?** You and three rivals queue at one price. An AI agent (an epsilon-greedy bandit, the simplest kind of reinforcement learning, written by us and run in the browser) is never told the rule. It only sees its profit. Under **price-time** it learns to *pay for speed*; under **pro-rata** it learns to *post big orders*.
-2. **The sniping race**, based on Budish, Cramton & Shim, *The High-Frequency Trading Arms Race* (QJE, 2015). News makes a market maker's price stale, and she races a sniper to fix it. With **continuous** matching, a tiny speed edge wins most races, so the market maker widens her spread and ordinary investors pay for the race. With a **batch auction**, speed differences stop mattering: the AI sniper learns to buy *no* speed, and the spread nearly disappears.
-
-3. **A market that learns** — a multi-agent simulation. A market maker learns her spread, 1–5 snipers each learn how much speed to buy, and investors trade less when the spread is wide. They all learn at the same time with a constant step size, which weights recent rewards more (Sutton & Barto, ch. 2.5), because each agent's world keeps changing as the others learn. Two identical markets train side by side, differing only in the matching rule. With continuous matching an **arms race emerges by itself**: snipers buy speed, the maker widens her spread, and investors trade about half as much and pay more. With a batch auction none of that happens.
-
-Every number is computed. `src/lab.test.ts` checks that these outcomes really emerge, across different random seeds.
+   **Honest result of our model, across 16 settings:**
+   - **Small news (smaller than the market maker's normal spread):** both markets behave the same. Her old price is still above the new fair price, so there is nothing to snipe.
+   - **Bigger news:** the batch auction keeps sniping at about 1% of news events, and investors trade about 1.7 to 23 times more.
+   - **Continuous matching:** a speed race appears only in a middle zone of news size (5 of 16 settings). With large news the market maker stops quoting (4 of 16 settings).
 
 ### Real market
-The **live Bitcoin order book** from Coinbase, with Kraken as a fallback, loaded straight from their public APIs. No key is needed and nothing is sent to the exchanges. Our own engine answers *“what would buying 1 BTC cost right now?”* It shows the average price, slippage in basis points, the number of price levels eaten, and the exact orders consumed.
+The live Bitcoin order book from Coinbase, with Kraken as a fallback, is copied into our engine. It answers: *what would a market order of X BTC cost right now, before fees?* The page shows the average price, slippage in basis points, the price levels eaten, and the depth chart. It only reads public data and never sends an order.
 
 ### How it works
-The algorithm in seven steps, and the actual allocation code. That code is read from `src/engine.ts` at build time, so it is the code that runs. The page also has a glossary and a list of what we simplified.
+The algorithm in seven steps, and the real allocation code, which is read from `src/engine.ts` at build time. There is also a glossary and an honest list of what we simplified.
 
 ## How the engine works
 
 ```
-while the incoming order has shares left and the other side isn't empty:
-    level = every order at the best opposite price (oldest first)
-    if that price is not acceptable: stop            # limit orders only
-    take = min(shares left, shares in level)
-    split take among the level by the rule:
-        price-time → oldest order first, each filled completely
-        pro-rata   → in proportion to size; rounding leftovers to the oldest
-    trade at the level's price; remove used-up orders
-leftover: limit → waits in the book; market → cancelled
+continuous — for each incoming order:
+    while it has shares left and the other side isn't empty:
+        level = every order at the best opposite price (oldest first)
+        if that price is not acceptable: stop
+        (your own waiting orders at that level are cancelled: no trading with yourself)
+        split min(shares left, shares in level) by the rule:
+            price-time → oldest first;  pro-rata → by size, rounding leftovers to the oldest
+        trade at the level's price; remove used-up orders
+    leftover: limit → waits in the book; market → cancelled
+
+batch auction — collect orders, then:
+    for every price p: demand(p) = buyers willing to pay ≥ p; supply(p) = sellers willing to accept ≤ p
+    choose p with the most shares traded (then least imbalance, then closest to the last price)
+    everyone who trades, trades at p; the marginal price level is shared by the same rule
 ```
 
-The engine (`src/engine.ts`) is pure. Every call returns a new state and never changes the old one, which makes it easy to test, to preview and to rewind.
+The engine is pure: every call returns a new state and never changes the old one. That makes it easy to test, to preview and to replay.
 
 ## What is computed and what is not
 
-Everything on the trading screens is computed by the engine from the user's input: fills, prices, queue positions, the hatched preview, the charts and the explanations. The only fixed data is the starting order books of the missions, which are listed in `src/lessons.ts`. The simulated traders use random numbers. Those numbers are drawn outside React's state updater and replayed inside it, so each step stays deterministic.
+Everything on screen is computed by the engine from the user's input: fills, prices, queue positions, the hatched previews, the auction price, the charts, the explanations, the experiments and the learners.
 
-## What we simplified
-- One stock, a $0.01 tick, and two order types (market and limit). Real exchanges have more types, such as stop and iceberg orders.
-- Plain pro-rata. Real futures markets often add a top-order bonus or minimum allocations.
-- No opening or closing auctions, fees or circuit breakers.
-- In Real market, each price level is split into equal orders, because public data gives only the total per price.
+The only fixed data is the starting order books of the missions (`src/lessons.ts`) and the parameters of the Rule Lab models (`src/lab.ts`). Those parameters are shown on screen, and the robustness check varies them. Random numbers come from a seeded generator, so experiments can be repeated.
+
+## Known limitations
+- **The Rule Lab models are toys.** There is one market maker, who can therefore charge a monopolist's spread, news only moves prices up, and we chose the reaction times. The results describe *our* model, and the robustness check shows how much they depend on the settings.
+- **The learners are simple bandits, not neural networks.**
+- **Prices are decimals rounded to whole cents at every entry point,** not integer cents.
+- **No fees, short selling is allowed, and there is only one stock.**
 
 ## Tests
 
-`npm test` runs 48 tests. They cover:
-- market and limit orders, partial fills, and FIFO queue order;
-- price priority across levels, and never trading through a limit price;
-- conservation of shares, and the book never being left crossed;
-- pro-rata allocation invariants, checked on 500 random cases;
-- immutability of the engine state;
-- every mission's claims and task checks;
-- 2,000 steps of simulated traders;
-- that the Rule Lab agent learns *fast* under FIFO, *big* under pro-rata, and *no speed* under batch auctions;
-- that in the multi-agent market the arms race emerges under continuous matching and not under batch auctions.
+`npm test` runs 59 tests. They cover:
+- **Engine:** market and limit orders, partial fills, FIFO, price priority, never trading through a limit price, conservation of shares, immutability, self-trade prevention, and pro-rata with huge sizes.
+- **Batch auction:** the clearing price, marginal-level tie-breaks, market orders, and 300 random books. On every one the auction trades the maximum possible volume and leaves the book uncrossed.
+- **Missions:** every mission's claims and task checks.
+- **Rule Lab:** the learners find the true best choice, and the experiment 3 claims are checked across a grid of settings, not at one hand-picked point.
 
 ## Project structure
 
 | File | What's in it |
 |---|---|
-| `src/engine.ts` | The matching engine: validation, price-time and pro-rata allocation, execution reports |
-| `src/realMarket.ts` | Loads the live BTC book (Coinbase, then Kraken) and turns it into engine state |
+| `src/engine.ts` | Continuous matching: validation, price-time and pro-rata allocation, self-trade prevention, execution reports |
+| `src/auction.ts` | The batch auction: demand/supply curve, clearing price, allocation, switching modes |
+| `src/lab.ts` | Rule Lab models (queue race, news race, multi-agent market) and the learners |
+| `src/realMarket.ts` | Loads the live BTC book (Coinbase, then Kraken) into engine state |
 | `src/bots.ts` | Simulated traders |
-| `src/lab.ts` | Rule Lab: queue race, sniping race, the multi-agent market, and the learning agents (bandits) |
-| `src/lessons.ts` | Missions, with their order books and auto-checked tasks |
+| `src/lessons.ts` | Missions and their auto-checked tasks |
 | `src/format.ts` | Formatting and the plain-language explanation of each execution |
-| `src/components/` | QueueBook (the visual order book), Ticket, Charts, Tape, Story, MissionCard, Shell |
-| `src/views/` | Simulator, Missions, Real market, How it works, Stats, Settings |
+| `src/components/` | QueueBook, Ticket, Charts, Tape, Story, MissionCard, Shell |
+| `src/views/` | Simulator, Missions, Rule Lab, Real market, How it works |
 
 ## Things we didn't make ourselves
 
 | What | Why we chose it |
 |---|---|
-| React + Vite + TypeScript | Standard, fast tooling for an interactive page that has to run in any browser |
+| React + Vite + TypeScript | Standard, fast tooling for an interactive page that runs in any browser |
 | lucide-react icons | Clean, consistent icons; MIT licence |
-| Inter and JetBrains Mono (Google Fonts) | Readable text and evenly spaced numbers for prices; SIL Open Font Licence |
+| Inter and JetBrains Mono (Google Fonts) | Readable text and evenly spaced numbers; SIL Open Font Licence |
 | Coinbase / Kraken public market-data APIs | Real order books with no key and no sign-up, readable from a browser |
 
-The charts, the order-book visualisation and the matching engine are our own code. There are no chart or trading libraries.
+The matching engine, the auction, the charts, the order-book drawing and the learners are our own code. There are no chart, trading or machine-learning libraries.
+
+## Sources
+- E. Budish, P. Cramton, J. Shim, "The High-Frequency Trading Arms Race: Frequent Batch Auctions as a Market Design Response", *Quarterly Journal of Economics* 130(4), 2015.
+- R. Sutton, A. Barto, *Reinforcement Learning: An Introduction*, 2nd ed., ch. 2 (bandits, constant step size for changing problems).
+- IEX speed bump (350 µs): IEX Exchange, public description of its market model.
 
 ## Run locally
 
@@ -115,10 +134,8 @@ Requires Node.js 18+.
 npm install
 npm run dev     # open the localhost URL shown
 npm test
-npm run build
+npm run deploy  # test, build and publish dist/ to the gh-pages branch
 ```
-
-`npm run deploy` runs the tests, builds, and publishes `dist/` to the `gh-pages` branch, which GitHub Pages serves (`scripts/deploy.sh`).
 
 ## Licence
 MIT — see `LICENSE`.

@@ -1,9 +1,10 @@
-import { BarChart3, BookOpen, CandlestickChart, Flag, FlaskConical, Pause, Play, Radio, RotateCcw, Settings } from 'lucide-react';
+import { BarChart3, BookOpen, CandlestickChart, Flag, FlaskConical, Moon, Pause, Play, Radio, RotateCcw, Sparkles, Sun } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { portfolioValue, STARTING_CASH, type EngineState } from '../engine';
 import { signed, usd } from '../format';
 
-export type View = 'trade' | 'missions' | 'lab' | 'live' | 'learn' | 'stats' | 'settings';
+export type View = 'trade' | 'missions' | 'lab' | 'live' | 'learn';
+export type Theme = 'system' | 'light' | 'dark';
 
 const NAV: { id: View; label: string; icon: ReactNode }[] = [
   { id: 'trade', label: 'Simulator', icon: <CandlestickChart size={18} /> },
@@ -11,11 +12,11 @@ const NAV: { id: View; label: string; icon: ReactNode }[] = [
   { id: 'lab', label: 'Rule Lab', icon: <FlaskConical size={18} /> },
   { id: 'live', label: 'Real market', icon: <Radio size={18} /> },
   { id: 'learn', label: 'How it works', icon: <BookOpen size={18} /> },
-  { id: 'stats', label: 'Your stats', icon: <BarChart3 size={18} /> },
-  { id: 'settings', label: 'Settings', icon: <Settings size={18} /> },
 ];
 
-export function Sidebar({ view, state, missionsDone, missionsTotal }: { view: View; state: EngineState; missionsDone: number; missionsTotal: number }) {
+type SidebarProps = { view: View; state: EngineState; missionsDone: number; missionsTotal: number; dark: boolean; onToggleTheme: () => void; onReplayIntro: () => void };
+
+export function Sidebar({ view, state, missionsDone, missionsTotal, dark, onToggleTheme, onReplayIntro }: SidebarProps) {
   const value = portfolioValue(state);
   const pnl = value - STARTING_CASH;
   return (
@@ -39,10 +40,17 @@ export function Sidebar({ view, state, missionsDone, missionsTotal }: { view: Vi
             </span>
           )}
           {n.id === 'live' && <i className="live-dot on" aria-hidden />}
-          {n.id === 'lab' && <span className="badge new">AI</span>}
         </a>
       ))}
       <div className="sidebar-foot">
+        <div className="foot-actions">
+          <button className="btn sm ghost" onClick={onReplayIntro}>
+            <Sparkles size={14} /> Replay intro
+          </button>
+          <button className="btn sm ghost" onClick={onToggleTheme} aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}>
+            {dark ? <Sun size={14} /> : <Moon size={14} />}
+          </button>
+        </div>
         <div className="account" title="Your simulated account in the simulator, valued at the last trade price">
           <div className="row">
             <span>Your account</span>
@@ -111,6 +119,10 @@ export function TopBar({ state, prevPrice, bestBid, bestAsk, spread, botsOn, spe
         <div className="stat opt">
           <span>Volume</span>
           <b>{volume.toLocaleString('en-US')}</b>
+        </div>
+        <div className="stat mobile-only" title="Your simulated account">
+          <span>You hold</span>
+          <b>{state.portfolio.shares} sh</b>
         </div>
       </div>
       <div className="topbar-actions">

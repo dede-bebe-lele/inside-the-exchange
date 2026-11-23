@@ -3,7 +3,7 @@
 // ask the engine "what would happen if this order arrived right now?".
 import { AlertTriangle, Info, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { previewOrder, setRule, type MatchingRule, type Side } from '../engine';
+import { previewOrder, type Side } from '../engine';
 import { ChartFrame, DepthChart } from '../components/Charts';
 import { QueueBook } from '../components/QueueBook';
 import { btc, fetchSnapshot, SATS_PER_BTC, stateFromSnapshot, type Snapshot } from '../realMarket';
@@ -21,7 +21,11 @@ export function LiveView() {
   const [auto, setAuto] = useState(true);
   const [side, setSide] = useState<Side>('buy');
   const [amount, setAmount] = useState(1);
-  const [rule, setRuleState] = useState<MatchingRule>('price-time');
+  const [amountText, setAmountText] = useState('1');
+  const pick = (v: number) => {
+    setAmount(v);
+    setAmountText(String(v));
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -45,7 +49,7 @@ export function LiveView() {
     return () => window.clearInterval(t);
   }, [auto, load]);
 
-  const state = useMemo(() => (snap ? setRule(stateFromSnapshot(snap), rule) : null), [snap, rule]);
+  const state = useMemo(() => (snap ? stateFromSnapshot(snap) : null), [snap]);
   const sats = Math.max(1, Math.round(amount * SATS_PER_BTC));
   const report = state ? previewOrder(state, side, 'market', sats) : null;
   const best = report?.bestOppositePrice ?? null;
@@ -64,7 +68,7 @@ export function LiveView() {
           <span className="eyebrow">Real market · {snap ? `${snap.source} ${snap.product}` : 'connecting…'}</span>
           <h1>The real Bitcoin order book, right now</h1>
           <p>
-            This is the live book of a real exchange. We run it through our own matching engine to answer one question: <b>what would your order really cost?</b> Nothing is sent anywhere.
+            This is the live book of a real exchange. We copy it into our own matching engine to answer one question: <b>what would a market order cost right now, before fees?</b> We only read public data — no order is ever sent.
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -100,7 +104,6 @@ export function LiveView() {
             fmtQty={fmtQty}
             fmtPrice={fmtPrice}
             title={`Live book · updated ${new Date(snap!.fetchedAt).toLocaleTimeString()}`}
-            onRuleChange={setRuleState}
           />
           <div className="live-side">
             <section className="card" aria-label="What would it cost">
@@ -124,8 +127,9 @@ export function LiveView() {
                   <div className="input-wrap">
                     <input
                       inputMode="decimal"
-                      value={amount}
+                      value={amountText}
                       onChange={e => {
+                        setAmountText(e.target.value);
                         const v = Number(e.target.value);
                         if (Number.isFinite(v) && v > 0) setAmount(Math.min(1000, v));
                       }}
@@ -133,10 +137,10 @@ export function LiveView() {
                     />
                     <span className="unit">BTC</span>
                   </div>
-                  <input className="range" type="range" min={0} max={1} step={0.001} value={toT(amount)} onChange={e => setAmount(Number(toBtc(Number(e.target.value)).toPrecision(3)))} aria-label="Amount slider" />
+                  <input className="range" type="range" min={0} max={1} step={0.001} value={toT(amount)} onChange={e => pick(Number(toBtc(Number(e.target.value)).toPrecision(3)))} aria-label="Amount slider" />
                   <div className="chips-row">
                     {[0.01, 0.1, 1, 10, 50].map(v => (
-                      <button key={v} className={`pill${amount === v ? ' on' : ''}`} onClick={() => setAmount(v)}>
+                      <button key={v} className={`pill${amount === v ? ' on' : ''}`} onClick={() => pick(v)}>
                         {v} BTC
                       </button>
                     ))}
@@ -173,7 +177,7 @@ export function LiveView() {
                   </div>
                 )}
                 <p className="hint" style={{ marginTop: 12 }}>
-                  1 bps (basis point) = 0.01%. Our engine splits each real price level into a few equal orders, because the exchange publishes only totals per price.
+                  1 bps (basis point) = 0.01%. Exchange fees (often 10–60 bps for small traders) would come on top. The exchange publishes only the total at each price, so we split each level into a few equal orders to draw it — the cost of a market order doesn't depend on how a level is split.
                 </p>
               </div>
             </section>

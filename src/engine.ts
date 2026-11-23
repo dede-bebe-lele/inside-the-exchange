@@ -20,6 +20,13 @@ export type OrderType = 'limit' | 'market';
 export type Owner = 'you' | 'market';
 /** How shares are shared out among resting orders at the same price. */
 export type MatchingRule = 'price-time' | 'pro-rata';
+/**
+ * WHEN orders are matched.
+ * continuous — every order is matched the moment it arrives (how stock exchanges trade all day);
+ * batch — orders are collected and then all matched together at ONE price in an auction
+ *         (how exchanges open and close the day; see auction.ts).
+ */
+export type MarketMode = 'continuous' | 'batch';
 
 export type Order = {
   id: number;
@@ -42,8 +49,8 @@ export type Trade = {
   sellerOrderId: number;
   buyerOwner: Owner;
   sellerOwner: Owner;
-  /** Side of the incoming order that caused the trade (who "crossed the spread"). */
-  aggressor: Side;
+  /** Side of the incoming order that caused the trade (who "crossed the spread"), or 'auction'. */
+  aggressor: Side | 'auction';
   timestamp: number;
 };
 
@@ -64,7 +71,8 @@ export type OrderStatus =
   | 'partial-resting' // limit: partly executed, remainder rests in the book
   | 'resting' // limit: nothing executed, whole order rests in the book
   | 'partial-cancelled' // market: partly executed, remainder cancelled (no liquidity)
-  | 'cancelled'; // market: nothing executed (empty opposite side)
+  | 'cancelled' // market: nothing executed (empty opposite side)
+  | 'queued'; // batch mode: waiting for the next auction
 
 export type ExecutionReport = {
   orderId: number;
@@ -76,6 +84,8 @@ export type ExecutionReport = {
   limitPrice?: number;
   /** Best opposite price when the order arrived (used to explain slippage). */
   bestOppositePrice: number | null;
+  /** Your own resting orders cancelled because this order would have traded with them. */
+  selfTradeCancelled: number[];
   fills: Fill[];
   filledQuantity: number;
   averagePrice: number | null;
@@ -87,7 +97,8 @@ export type ExecutionReport = {
 
 export type ActivityEvent =
   | { kind: 'order'; report: ExecutionReport }
-  | { kind: 'cancel'; orderId: number; side: Side; price: number; remaining: number; owner: Owner; timestamp: number };
+  | { kind: 'cancel'; orderId: number; side: Side; price: number; remaining: number; owner: Owner; timestamp: number }
+  | { kind: 'auction'; price: number | null; volume: number; trades: number; yourShares: number; timestamp: number };
 
 export type EngineState = {
   /** Sorted best-first: highest price, then earliest timestamp. */
@@ -106,6 +117,9 @@ export type EngineState = {
   activity: ActivityEvent[];
   portfolio: Portfolio;
   rule: MatchingRule;
+  mode: MarketMode;
+  /** Batch mode only: market orders waiting for the next auction (they have no price, so they can't sit in bids/asks). */
+  pending: Order[];
   /** Largest order allowed (defaults to MAX_QUANTITY; the live BTC book counts in satoshis). */
   maxQuantity?: number;
 };
@@ -113,7 +127,8 @@ export type EngineState = {
 export const TICK_SIZE = 0.01;
 export const MAX_QUANTITY = 1_000_000;
 export const MAX_HISTORY = 200;
-export const STARTING_CASH = 10_000;
+/** Enough to buy a few hundred $100 shares. The simulator also allows selling shares you don't own (short selling). */
+export const STARTING_CASH = 25_000;
 
 /** Round a price to the nearest tick ($0.01) without floating-point drift. */
 export function roundToTick(price: number): number {
@@ -165,6 +180,8 @@ export function createInitialState(): EngineState {
     activity: [],
     portfolio: { shares: 0, cash: STARTING_CASH },
     rule: 'price-time',
+    mode: 'continuous',
+    pending: [],
   };
 }
 
@@ -211,8 +228,10 @@ export function allocatePriceTime(level: Order[], take: number): number[] {
  */
 export function allocateProRata(level: Order[], take: number): number[] {
   const total = level.reduce((sum, o) => sum + o.remaining, 0);
-  const result = level.map(o => Math.floor((take * o.remaining) / total));
-  let left = take - result.reduce((a, b) => a + b, 0);
+  const want = Math.min(take, total); // can never hand out more than the level holds
+  // remaining / total first, so huge sizes (satoshis) don't overflow exact integer maths.
+  const result = level.map(o => Math.min(o.remaining, Math.floor(want * (o.remaining / total))));
+  let left = want - result.reduce((a, b) => a + b, 0);
   for (let i = 0; left > 0; i = (i + 1) % level.length) {
     if (result[i] < level[i].remaining) {
       result[i]++;
@@ -244,6 +263,8 @@ export function executeOrder(
   const timestamp = state.clock;
   const incoming: Order = { id: state.nextOrderId, side, type, price, quantity, remaining: quantity, timestamp, owner };
 
+  if (state.mode === 'batch') return queueForAuction(state, incoming, bids, asks);
+
   // The opposite side of the book, sorted best price first, then earliest first.
   const opposite = side === 'buy' ? asks : bids;
   opposite.sort(side === 'buy' ? compareAsks : compareBids);
@@ -254,12 +275,27 @@ export function executeOrder(
   let nextTradeId = state.nextTradeId;
   let lastPrice = state.lastPrice;
 
+  const selfTradeCancelled: number[] = [];
+
   // Match one price level at a time, best price first (price priority).
   while (incoming.remaining > 0 && opposite.length > 0) {
     if (!crosses(side, type, price, opposite[0])) break;
 
     // Every resting order at the best price, already in arrival order.
     const levelPrice = opposite[0].price as number;
+
+    // Self-trade prevention: you can't trade with yourself. If your order reaches one of
+    // your own waiting orders, that waiting order is cancelled instead (the "cancel
+    // resting" option real exchanges offer). Only for 'you' — 'market' is many people.
+    if (owner === 'you') {
+      const own = opposite.filter(o => o.price === levelPrice && o.owner === 'you');
+      if (own.length) {
+        selfTradeCancelled.push(...own.map(o => o.id));
+        for (const o of own) opposite.splice(opposite.indexOf(o), 1);
+        continue;
+      }
+    }
+
     const level = opposite.filter(o => o.price === levelPrice);
     const take = Math.min(incoming.remaining, level.reduce((sum, o) => sum + o.remaining, 0));
 
@@ -306,13 +342,7 @@ export function executeOrder(
     }
   }
 
-  // Update the user's account for every trade they are on (either side).
-  let { shares, cash } = state.portfolio;
-  for (const t of newTrades) {
-    if (t.buyerOwner === 'you') { shares += t.quantity; cash -= t.price * t.quantity; }
-    if (t.sellerOwner === 'you') { shares -= t.quantity; cash += t.price * t.quantity; }
-  }
-  cash = Math.round(cash * 100) / 100;
+  const { shares, cash } = applyTrades(state.portfolio, newTrades);
 
   const notional = fills.reduce((sum, f) => sum + f.price * f.quantity, 0);
   const averagePrice = filledQuantity > 0 ? Math.round((notional / filledQuantity) * 10000) / 10000 : null;
@@ -331,6 +361,7 @@ export function executeOrder(
     quantity,
     limitPrice: price,
     bestOppositePrice,
+    selfTradeCancelled,
     fills,
     filledQuantity,
     averagePrice,
@@ -352,6 +383,69 @@ export function executeOrder(
       clock: state.clock + 1,
       activity: [{ kind: 'order' as const, report }, ...state.activity].slice(0, MAX_HISTORY),
       portfolio: { shares, cash },
+    },
+    report,
+  };
+}
+
+/** Update the user's account for every trade they are on (either side). */
+export function applyTrades(portfolio: Portfolio, trades: Trade[]): Portfolio {
+  let { shares, cash } = portfolio;
+  for (const t of trades) {
+    if (t.buyerOwner === 'you') {
+      shares += t.quantity;
+      cash -= t.price * t.quantity;
+    }
+    if (t.sellerOwner === 'you') {
+      shares -= t.quantity;
+      cash += t.price * t.quantity;
+    }
+  }
+  return { shares, cash: Math.round(cash * 100) / 100 };
+}
+
+/**
+ * Batch mode: the order is NOT matched now. A limit order joins the book (the book may
+ * now be "crossed" — a bid above an ask — that's fine until the auction); a market order
+ * waits in `pending`. The auction (auction.ts) matches everything later at one price.
+ */
+function queueForAuction(state: EngineState, incoming: Order, bids: Order[], asks: Order[]): { state: EngineState; report: ExecutionReport } {
+  const pending = [...state.pending];
+  if (incoming.type === 'limit') {
+    const sameSide = incoming.side === 'buy' ? bids : asks;
+    sameSide.push(incoming);
+    sameSide.sort(incoming.side === 'buy' ? compareBids : compareAsks);
+  } else {
+    pending.push(incoming);
+  }
+  const opposite = incoming.side === 'buy' ? asks : bids;
+  const report: ExecutionReport = {
+    orderId: incoming.id,
+    side: incoming.side,
+    type: incoming.type,
+    owner: incoming.owner,
+    rule: state.rule,
+    quantity: incoming.quantity,
+    limitPrice: incoming.price,
+    bestOppositePrice: opposite[0]?.price ?? null,
+    selfTradeCancelled: [],
+    fills: [],
+    filledQuantity: 0,
+    averagePrice: null,
+    restingQuantity: incoming.quantity,
+    cancelledQuantity: 0,
+    status: 'queued',
+    timestamp: incoming.timestamp,
+  };
+  return {
+    state: {
+      ...state,
+      bids,
+      asks,
+      pending,
+      nextOrderId: state.nextOrderId + 1,
+      clock: state.clock + 1,
+      activity: [{ kind: 'order' as const, report }, ...state.activity].slice(0, MAX_HISTORY),
     },
     report,
   };
@@ -381,15 +475,16 @@ export function setRule(state: EngineState, rule: MatchingRule): EngineState {
 }
 
 export function cancelOrder(state: EngineState, id: number): EngineState {
-  const order = state.bids.find(o => o.id === id) ?? state.asks.find(o => o.id === id);
+  const order = state.bids.find(o => o.id === id) ?? state.asks.find(o => o.id === id) ?? state.pending.find(o => o.id === id);
   if (!order) return state;
   return {
     ...state,
     bids: state.bids.filter(o => o.id !== id),
     asks: state.asks.filter(o => o.id !== id),
+    pending: state.pending.filter(o => o.id !== id),
     clock: state.clock + 1,
     activity: [
-      { kind: 'cancel' as const, orderId: id, side: order.side, price: order.price as number, remaining: order.remaining, owner: order.owner, timestamp: state.clock },
+      { kind: 'cancel' as const, orderId: id, side: order.side, price: order.price ?? NaN, remaining: order.remaining, owner: order.owner, timestamp: state.clock },
       ...state.activity,
     ].slice(0, MAX_HISTORY),
   };

@@ -66,7 +66,7 @@ export function PriceChart({ trades, openPrice, fmtPrice, width: W }: { trades: 
       <polyline className="line" points={line} />
       {pts.map((t, i) => {
         const h = (t.quantity / maxVol) * 34;
-        return <rect key={t.id} className={t.aggressor === 'buy' ? 'vol-buy' : 'vol-sell'} x={x(i) - barW / 2} y={H - PAD.b - h} width={barW} height={h} rx={1} />;
+        return <rect key={t.id} className={t.aggressor === 'buy' ? 'vol-buy' : t.aggressor === 'sell' ? 'vol-sell' : 'vol-auction'} x={x(i) - barW / 2} y={H - PAD.b - h} width={barW} height={h} rx={1} />;
       })}
       <g className="tag" transform={`translate(${W - PAD.r + 2}, ${y(last.price) - 9})`}>
         <rect width={PAD.r - 4} height={18} rx={4} />
@@ -213,6 +213,59 @@ export function ShareChart({
       </text>
       <text className="axis" x={W - pad.r} y={height - 5} textAnchor="end">
         {xLabel}
+      </text>
+    </svg>
+  );
+}
+
+/**
+ * The auction picture: at each price, how many shares buyers want (demand, falls as the
+ * price rises) and sellers offer (supply, rises). The auction price is where the most
+ * shares can trade — where the two curves meet.
+ */
+export function AuctionChart({ curve, price, width: W, fmtPrice }: { curve: { price: number; demand: number; supply: number }[]; price: number | null; width: number; fmtPrice: (p: number) => string }) {
+  if (curve.length < 2) return <div className="chart-empty">Add buy and sell orders to see where supply meets demand.</div>;
+  const pad = { l: 40, r: 12, t: 12, b: 24 };
+  const lo = curve[0].price;
+  const hi = curve[curve.length - 1].price;
+  const span = hi - lo || 1;
+  const maxQ = Math.max(1, ...curve.map(c => Math.max(c.demand, c.supply)));
+  const x = (p: number) => pad.l + ((p - lo) / span) * (W - pad.l - pad.r);
+  const y = (q: number) => pad.t + (1 - q / maxQ) * (H - pad.t - pad.b);
+  const step = (f: (c: (typeof curve)[number]) => number) => curve.map((c, i) => `${i ? 'L' : 'M'}${x(c.price)},${y(f(c))}${i + 1 < curve.length ? ` L${x(curve[i + 1].price)},${y(f(c))}` : ''}`).join(' ');
+  const at = price === null ? null : curve.find(c => c.price === price);
+  return (
+    <svg className="chart-svg" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Auction: demand and supply at each price">
+      {ticks(0, maxQ).map(v => (
+        <g key={v}>
+          <line className="grid" x1={pad.l} x2={W - pad.r} y1={y(v)} y2={y(v)} />
+          <text className="axis" x={pad.l - 6} y={y(v) + 3.5} textAnchor="end">
+            {Math.round(v)}
+          </text>
+        </g>
+      ))}
+      <path d={step(c => c.demand)} fill="none" stroke="var(--bid)" strokeWidth={2} />
+      <path d={step(c => c.supply)} fill="none" stroke="var(--ask)" strokeWidth={2} />
+      {at && (
+        <g>
+          <line className="mid-line" x1={x(at.price)} x2={x(at.price)} y1={pad.t} y2={H - pad.b} />
+          <circle className="dot" cx={x(at.price)} cy={y(Math.min(at.demand, at.supply))} r={5} />
+          <text className="axis" x={x(at.price) + 8} y={y(Math.min(at.demand, at.supply)) - 8}>
+            auction price {fmtPrice(at.price)}
+          </text>
+        </g>
+      )}
+      <text className="axis" x={pad.l} y={H - 6}>
+        {fmtPrice(lo)}
+      </text>
+      <text className="axis" x={W - pad.r} y={H - 6} textAnchor="end">
+        {fmtPrice(hi)}
+      </text>
+      <text className="axis" x={W - pad.r} y={pad.t + 10} textAnchor="end" style={{ fill: 'var(--bid)' }}>
+        buyers want (demand)
+      </text>
+      <text className="axis" x={W - pad.r} y={pad.t + 24} textAnchor="end" style={{ fill: 'var(--ask)' }}>
+        sellers offer (supply)
       </text>
     </svg>
   );

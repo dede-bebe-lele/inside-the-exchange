@@ -8,6 +8,7 @@ import {
   previewOrder,
   queuePositions,
   setRule,
+  STARTING_CASH,
   spread,
   allocateProRata,
   stateFromBook,
@@ -126,8 +127,8 @@ describe('price-time priority', () => {
 
   it('a partially filled resting order keeps its place at the front of the queue', () => {
     let s = emptyState();
-    s = submitOrder(s, 'sell', 'limit', 10, 50); // id 1
-    s = submitOrder(s, 'sell', 'limit', 10, 50); // id 2
+    s = submitOrder(s, 'sell', 'limit', 10, 50, 'market'); // id 1
+    s = submitOrder(s, 'sell', 'limit', 10, 50, 'market'); // id 2
     s = submitOrder(s, 'buy', 'market', 4);
     expect(s.asks[0]).toMatchObject({ id: 1, remaining: 6 });
     const { report } = executeOrder(s, 'buy', 'market', 8);
@@ -193,7 +194,7 @@ describe('portfolio', () => {
   it('tracks shares and cash for the user, and ignores market participants', () => {
     let s = submitOrder(createInitialState(), 'buy', 'market', 25); // 10 @ 100.10 + 15 @ 100.20
     expect(s.portfolio.shares).toBe(25);
-    expect(s.portfolio.cash).toBeCloseTo(10_000 - 2504, 6);
+    expect(s.portfolio.cash).toBeCloseTo(STARTING_CASH - 2504, 6);
     s = submitOrder(s, 'sell', 'market', 5, undefined, 'market');
     expect(s.portfolio.shares).toBe(25);
   });
@@ -201,7 +202,7 @@ describe('portfolio', () => {
   it('credits the user when their resting order is hit by someone else', () => {
     let s = submitOrder(createInitialState(), 'sell', 'limit', 10, 100.05);
     s = submitOrder(s, 'buy', 'market', 4, undefined, 'market');
-    expect(s.portfolio).toEqual({ shares: -4, cash: 10_000 + 400.2 });
+    expect(s.portfolio).toEqual({ shares: -4, cash: STARTING_CASH + 400.2 });
   });
 });
 
@@ -296,5 +297,35 @@ describe('pro-rata matching rule', () => {
     const { report } = executeOrder(s, 'buy', 'market', 20);
     expect(report.fills[0]).toMatchObject({ price: 100.05, quantity: 5 });
     expect(report.fills.slice(1).map(f => f.quantity)).toEqual([2, 13]); // 15 split 10:90 → 1.5/13.5
+  });
+});
+
+describe('self-trade prevention', () => {
+  it('your order never trades with your own waiting order — that order is cancelled instead', () => {
+    let s = submitOrder(createInitialState(), 'sell', 'limit', 5, 100.05); // you wait to sell at 100.05
+    const mine = s.asks[0].id;
+    const { state, report } = executeOrder(s, 'buy', 'market', 8); // you then buy at market
+    expect(report.selfTradeCancelled).toEqual([mine]);
+    expect(report.fills.every(f => f.restingOwner !== 'you')).toBe(true);
+    expect(state.trades.some(t => t.buyerOwner === 'you' && t.sellerOwner === 'you')).toBe(false);
+    expect(report.fills[0].price).toBe(100.1); // traded with the next real seller instead
+    s = state;
+  });
+
+  it('simulated traders (many different people) can still trade with each other', () => {
+    let s = submitOrder(createInitialState(), 'sell', 'limit', 5, 100.05, 'market');
+    const { report } = executeOrder(s, 'buy', 'market', 5, undefined, 'market');
+    expect(report.fills[0].price).toBe(100.05);
+    s = submitOrder(s, 'buy', 'market', 1, undefined, 'market');
+  });
+});
+
+describe('robustness', () => {
+  it('pro-rata never hands out more than asked or more than an order holds, even with huge sizes', () => {
+    const big = [3e11, 7e11, 1].map((q, i) => ({ id: i, side: 'sell' as const, type: 'limit' as const, price: 1, quantity: q, remaining: q, timestamp: i, owner: 'market' as const }));
+    const alloc = allocateProRata(big, 5e11);
+    expect(alloc.reduce((a, b) => a + b, 0)).toBe(5e11);
+    alloc.forEach((a, i) => expect(a).toBeLessThanOrEqual(big[i].remaining));
+    expect(allocateProRata(big, 1e13).reduce((a, b) => a + b, 0)).toBe(1e12 + 1); // capped at what the level holds
   });
 });

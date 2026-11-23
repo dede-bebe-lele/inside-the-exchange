@@ -486,3 +486,20 @@ a { color: var(--accent); }
 .eco-title { display: flex; align-items: center; font-weight: 650; font-size: 13.5px; }
 @media (max-width: 1100px) { .eco-controls { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 760px) { .eco-controls, .eco-grid { grid-template-columns: 1fr; } }
+.auction-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 16px 10px; padding: 9px 11px; border-radius: 9px; background: var(--amber-soft); font-size: 12.5px; color: var(--text-2); line-height: 1.5; }
+.auction-bar b { color: var(--text); }
+.spread-row.crossed { background: var(--amber-soft); }
+.spread-row.crossed b { font-family: Inter, sans-serif; font-weight: 600; }
+.who-tag.auction { background: var(--amber-soft); color: var(--amber); }
+.chart-svg .vol-auction { fill: color-mix(in srgb, var(--amber) 60%, transparent); }
+.lab-intro { margin: 0; font-size: 13px; line-height: 1.6; color: var(--text-2); }
+.lab-table td.true-best { color: var(--bid-ink); font-weight: 700; }
+.sweep { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); }
+.sweep-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; flex-wrap: wrap; }
+.sweep-head b { font-size: 13.5px; }
+.sweep-head .hint { margin-top: 3px; max-width: 720px; }
+.sweep-table td.hot { color: var(--ask-ink); font-weight: 700; }
+
+.foot-actions { display: flex; justify-content: space-between; gap: 6px; }
+.stat.mobile-only { display: none; }
+@media (max-width: 900px) { .stat.mobile-only { display: block; } }

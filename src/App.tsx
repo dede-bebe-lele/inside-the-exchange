@@ -2,12 +2,14 @@
 // All trading logic lives in engine.ts; this file only decides WHEN to call it.
 import { CheckCircle2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { clearAuction, setMode } from './auction';
 import { botStep, replayRng } from './bots';
 import {
   bestAsk as getBestAsk,
   bestBid as getBestBid,
   cancelOrder,
   createInitialState,
+  executeOrder,
   previewOrder,
   setRule,
   spread as getSpread,
@@ -15,23 +17,22 @@ import {
   validateOrder,
   type EngineState,
   type ExecutionReport,
+  type MarketMode,
   type MatchingRule,
 } from './engine';
 import { LESSONS, type Lesson } from './lessons';
-import { Sidebar, TopBar, type View } from './components/Shell';
+import { Sidebar, TopBar, type Theme, type View } from './components/Shell';
 import type { TicketState } from './components/Ticket';
 import { load, save } from './storage';
 import { LabView } from './views/LabView';
 import { LearnView } from './views/LearnView';
 import { LiveView } from './views/LiveView';
 import { MissionsView } from './views/MissionsView';
-import { SettingsView, type Theme } from './views/SettingsView';
-import { StatsView } from './views/StatsView';
 import { TradeView } from './views/TradeView';
 
 const SPEEDS: Record<string, number> = { slow: 1800, normal: 850, fast: 300 };
 const DEFAULT_TICKET: TicketState = { side: 'buy', type: 'market', quantity: '10', price: '100.00' };
-const VIEWS: View[] = ['trade', 'missions', 'lab', 'live', 'learn', 'stats', 'settings'];
+const VIEWS: View[] = ['trade', 'missions', 'lab', 'live', 'learn'];
 
 const viewFromHash = (): View => {
   const v = window.location.hash.replace('#/', '') as View;
@@ -103,6 +104,17 @@ export default function App() {
     () => (error ? null : previewOrder(setRule(state, otherRule), ticket.side, ticket.type, quantity, price)),
     [state, otherRule, ticket.side, ticket.type, quantity, price, error],
   );
+  // Batch mode: what the auction would do right now, and what it would do with your order in it.
+  const batch = state.mode === 'batch';
+  const auctionNow = useMemo(() => (batch ? clearAuction(state).result : null), [batch, state]);
+  const auctionWithMine = useMemo(() => {
+    if (!batch || error) return null;
+    const withMine = executeOrder(state, ticket.side, ticket.type, quantity, price).state;
+    const id = state.nextOrderId;
+    const r = clearAuction(withMine).result;
+    const mine = r.trades.filter(t => t.buyerOrderId === id || t.sellerOrderId === id).reduce((a, t) => a + t.quantity, 0);
+    return { price: r.price, mine };
+  }, [batch, error, state, ticket.side, ticket.type, quantity, price]);
   const queuePosition =
     preview && preview.restingQuantity > 0 ? (ticket.side === 'buy' ? state.bids : state.asks).filter(o => o.price === preview.limitPrice).length + 1 : undefined;
 
@@ -118,12 +130,15 @@ export default function App() {
   const lastReport = myReports[myReports.length - 1] ?? null;
 
   // --- simulated market participants ---
+  // In batch mode, every 5th tick is an auction instead of a new order.
+  const ticks = useRef(0);
   useEffect(() => {
     if (!botsOn) return;
     const timer = window.setInterval(() => {
       // Random numbers are drawn here, outside the updater, so the updater stays pure.
       const draws = Array.from({ length: 12 }, Math.random);
-      setState(s => botStep(s, replayRng(draws)));
+      const auctionTurn = ++ticks.current % 5 === 0;
+      setState(s => (s.mode === 'batch' && auctionTurn ? clearAuction(s).state : botStep(s, replayRng(draws))));
     }, SPEEDS[speed] ?? 850);
     return () => window.clearInterval(timer);
   }, [botsOn, speed]);
@@ -177,7 +192,19 @@ export default function App() {
 
   return (
     <div className="app">
-      <Sidebar view={view} state={state} missionsDone={missionsDone} missionsTotal={LESSONS.length} />
+      <Sidebar
+        view={view}
+        state={state}
+        missionsDone={missionsDone}
+        missionsTotal={LESSONS.length}
+        dark={document.documentElement.dataset.theme === 'dark'}
+        onToggleTheme={() => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark')}
+        onReplayIntro={() => {
+          setShowStory(true);
+          save('story-closed', false);
+          go('trade');
+        }}
+      />
       <main className="main">
         {view === 'trade' && (
           <>
@@ -212,6 +239,10 @@ export default function App() {
               onSubmit={send}
               onCancel={id => setState(s => cancelOrder(s, id))}
               onRule={r => setState(s => setRule(s, r))}
+              onMode={(m: MarketMode) => setState(s => setMode(s, m))}
+              onRunAuction={() => setState(s => clearAuction(s).state)}
+              auction={auctionNow}
+              auctionWithMine={auctionWithMine}
               showStory={showStory}
               onCloseStory={closeStory}
               onStoryDone={() => save('story-closed', true)}
@@ -223,34 +254,20 @@ export default function App() {
             />
           </>
         )}
-        {view === 'missions' && <MissionsView missions={LESSONS} progress={progress} onStart={startMission} />}
-        {view === 'lab' && <LabView />}
-        {view === 'live' && <LiveView />}
-        {view === 'learn' && <LearnView />}
-        {view === 'stats' && <StatsView state={state} />}
-        {view === 'settings' && (
-          <SettingsView
-            theme={theme}
-            onTheme={setTheme}
-            rule={state.rule}
-            onRule={r => setState(s => setRule(s, r))}
-            speed={speed}
-            onSpeed={setSpeed}
-            onShowStory={() => {
-              setShowStory(true);
-              save('story-closed', false);
-              go('trade');
-            }}
+        {view === 'missions' && (
+          <MissionsView
+            missions={LESSONS}
+            progress={progress}
+            onStart={startMission}
             onResetProgress={() => {
               setProgress({});
               save('progress', {});
             }}
-            onResetSim={() => {
-              reset();
-              go('trade');
-            }}
           />
         )}
+        {view === 'lab' && <LabView />}
+        {view === 'live' && <LiveView />}
+        {view === 'learn' && <LearnView />}
       </main>
       {toast && (
         <div className="toast" role="status">

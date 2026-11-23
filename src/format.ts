@@ -1,7 +1,9 @@
 import type { ExecutionReport, Side } from './engine';
 
 export const usd = (n: number | null | undefined, digits = 2): string =>
-  n === null || n === undefined ? '—' : `$${n.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
+  n === null || n === undefined || Number.isNaN(n)
+    ? '—'
+    : `${n < 0 ? '−' : ''}$${Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
 
 export const shares = (n: number): string => `${n.toLocaleString('en-US')} sh`;
 
@@ -10,7 +12,11 @@ export const signed = (n: number, digits = 2): string => `${n >= 0 ? '+' : '−'
 const NAMES = ['Ana', 'Ben', 'Chen', 'Dina', 'Eli', 'Fatima', 'Gus', 'Hana', 'Ivan', 'Jade', 'Kofi', 'Lea', 'Mia', 'Noah', 'Omar', 'Pia', 'Raj', 'Sara', 'Tomas', 'Uma', 'Vik', 'Wen', 'Yara', 'Zane'];
 
 /** A stable, friendly name for a simulated trader, so orders feel like people. */
-export const traderName = (orderId: number): string => NAMES[(orderId * 7) % NAMES.length];
+export const traderName = (orderId: number): string => {
+  // 7 and 24 share no factor, so ids 1–24 get 24 different names; later ids get a number.
+  const round = Math.floor((orderId - 1) / NAMES.length);
+  return NAMES[(orderId * 7) % NAMES.length] + (round > 0 ? ` ${round + 1}` : '');
+};
 
 export const opposite = (side: Side): Side => (side === 'buy' ? 'sell' : 'buy');
 
@@ -44,6 +50,11 @@ export function narrate(r: ExecutionReport, opts: { future: boolean; queuePositi
     const pos = opts.queuePosition ? ` as #${opts.queuePosition} in the queue at that price` : '';
     steps.push(`${steps.length + 1}. ${f ? 'Rest' : 'Rested'} ${shares(r.restingQuantity)} in the book at ${usd(r.limitPrice)}${pos}, waiting for a ${other}er.`);
   }
+  if (r.selfTradeCancelled.length) {
+    steps.unshift(
+      `${f ? 'Cancel' : 'Cancelled'} your own waiting order${r.selfTradeCancelled.length > 1 ? 's' : ''} ${r.selfTradeCancelled.map(id => `#${id}`).join(', ')} first — you can't trade with yourself (self-trade prevention).`,
+    );
+  }
   if (r.cancelledQuantity > 0) {
     steps.push(`${steps.length + 1}. ${f ? 'Cancel' : 'Cancelled'} the remaining ${shares(r.cancelledQuantity)} — there ${f ? 'are' : 'were'} no more ${other} orders, and market orders never rest.`);
   }
@@ -70,6 +81,16 @@ export function narrate(r: ExecutionReport, opts: { future: boolean; queuePositi
     case 'cancelled':
       headline = `Nothing ${f ? 'to match' : 'matched'} — the ${other} side is empty`;
       tone = 'warn';
+      break;
+    case 'queued':
+      headline = `${f ? 'Will wait' : 'Waiting'} for the next auction — nothing trades until then`;
+      tone = 'neutral';
+      steps.length = 0;
+      steps.push(
+        r.type === 'market'
+          ? 'In batch mode even a market order waits. At the auction it buys or sells at the single auction price; if it can’t trade then, it is cancelled.'
+          : `Your limit at ${usd(r.limitPrice)} joins the book. At the auction it trades only if the auction price is ${r.side === 'buy' ? 'at or below' : 'at or above'} your limit.`,
+      );
       break;
   }
 
