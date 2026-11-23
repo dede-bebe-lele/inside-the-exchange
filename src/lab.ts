@@ -196,3 +196,136 @@ export function rollingShare(choices: number[], actions: number, window = 50): n
   for (const c of recent) out[c] += 1 / Math.max(1, recent.length);
   return out;
 }
+
+/* ------------------------------------------------------------------ */
+/* Experiment 3: a market that learns (multi-agent)                    */
+/* ------------------------------------------------------------------ */
+//
+// Many learning agents at once, all trading through the engine:
+//  - Maya, the market maker, learns how wide to set her spread.
+//  - N snipers each learn how much speed to buy.
+//  - Investors trade less when the spread is wider.
+// Because everyone keeps learning, the world each agent sees keeps changing, so the
+// agents use a constant step size: they weight recent rewards more and forget old
+// ones (the standard fix for "non-stationary" problems, Sutton & Barto ch. 2.5).
+
+/** Half-spreads Maya can choose: she sells at mid + h and buys at mid − h. */
+export const HALF_SPREADS = [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.08];
+/** Speed upgrades in the ecosystem (cheaper than in Experiment 2, since the prize is shared). */
+export const ECO_SPEEDS = [
+  { edgeMs: 0, cost: 0 },
+  { edgeMs: 0.3, cost: 0.15 },
+  { edgeMs: 0.6, cost: 0.3 },
+  { edgeMs: 1, cost: 0.6 },
+];
+
+export type EcoParams = {
+  batchMs: number | null;
+  snipers: number;
+  jump: number;
+  newsProb: number;
+  /** Shares investors would trade per round if the spread were zero. */
+  demand: number;
+};
+
+export const ECO_DEFAULTS: EcoParams = { batchMs: null, snipers: 3, jump: 0.15, newsProb: 0.5, demand: 60 };
+const ECO_QUOTE = 50;
+const MID = 100;
+/** Investors stop trading completely when the half-spread reaches this. */
+const MAX_HALF = 0.1;
+
+export type EcoAgents = { maker: Bandit; snipers: Bandit[] };
+export type EcoRound = { half: number; avgEdge: number; volume: number; sniped: boolean; makerProfit: number; sniperNet: number; speedSpend: number; investorCost: number };
+
+export const newEco = (p: EcoParams): EcoAgents => ({ maker: newBandit(HALF_SPREADS.length), snipers: Array.from({ length: p.snipers }, () => newBandit(ECO_SPEEDS.length)) });
+
+/** Learning with a constant step size: recent rewards count more than old ones. */
+export function learnRecent(b: Bandit, action: number, reward: number, alpha = 0.05): Bandit {
+  const counts = b.counts.slice();
+  const values = b.values.slice();
+  counts[action] += 1;
+  values[action] += (counts[action] === 1 ? 1 : alpha) * (reward - values[action]);
+  return { values, counts };
+}
+
+/** One round of the ecosystem: everyone picks an action, the engine runs the market, everyone learns. */
+export function ecoRound(agents: EcoAgents, p: EcoParams, rng: Rng, epsilon = 0.05): { agents: EcoAgents; round: EcoRound } {
+  const hi = chooseAction(agents.maker, epsilon, rng);
+  const half = HALF_SPREADS[hi];
+  const picks = agents.snipers.map(b => chooseAction(b, epsilon, rng));
+
+  // Maya quotes both sides through the engine.
+  let s = emptyBook('price-time');
+  s = submitOrder(s, 'buy', 'limit', 10_000, Math.round((MID - half) * 100) / 100, 'market');
+  const askId = s.nextOrderId;
+  s = submitOrder(s, 'sell', 'limit', 10_000, Math.round((MID + half) * 100) / 100, 'market');
+
+  // Investors: fewer trades when the spread is wide. Half buy, half sell, at market.
+  const volume = Math.round(p.demand * Math.max(0, 1 - half / MAX_HALF));
+  const buys = Math.floor(volume / 2);
+  if (buys > 0) s = submitOrder(s, 'buy', 'market', buys, undefined, 'market');
+  if (volume - buys > 0) s = submitOrder(s, 'sell', 'market', volume - buys, undefined, 'market');
+  let makerProfit = half * volume;
+
+  // News: the true price jumps up. Maya races to move her ask; snipers race to hit it.
+  const sniperGain = picks.map(() => 0);
+  let sniped = false;
+  if (rng() < p.newsProb && p.jump > half) {
+    const mayaAt = 1 + rng();
+    const arrivals = picks.map(a => 1 + rng() - ECO_SPEEDS[a].edgeMs);
+    let winners: number[] = [];
+    if (p.batchMs === null) {
+      const first = arrivals.indexOf(Math.min(...arrivals));
+      if (arrivals[first] < mayaAt) winners = [first]; // only the fastest sniper gets the stale quote
+    } else {
+      const phase = rng() * p.batchMs;
+      const batch = (t: number) => Math.floor((t + phase) / p.batchMs!);
+      const earliest = Math.min(...arrivals.map(batch));
+      if (earliest < batch(mayaAt)) winners = arrivals.map((t, i) => (batch(t) === earliest ? i : -1)).filter(i => i >= 0); // same batch: they share it
+    }
+    if (winners.length) {
+      // The engine executes the snipe against Maya's stale ask (only ECO_QUOTE shares are exposed).
+      const staleAsk = Math.round((MID + half) * 100) / 100;
+      let book = cancelOrder(s, askId);
+      book = submitOrder(book, 'sell', 'limit', ECO_QUOTE, staleAsk, 'market');
+      const filled = executeOrder(book, 'buy', 'limit', ECO_QUOTE, staleAsk, 'you').report.filledQuantity;
+      const prize = (p.jump - half) * filled;
+      sniped = filled > 0;
+      makerProfit -= prize;
+      for (const w of winners) sniperGain[w] = prize / winners.length;
+    }
+  }
+
+  const sniperRewards = picks.map((a, i) => sniperGain[i] - ECO_SPEEDS[a].cost);
+  return {
+    agents: { maker: learnRecent(agents.maker, hi, makerProfit), snipers: agents.snipers.map((b, i) => learnRecent(b, picks[i], sniperRewards[i])) },
+    round: {
+      half,
+      avgEdge: picks.reduce((sum, a) => sum + ECO_SPEEDS[a].edgeMs, 0) / Math.max(1, picks.length),
+      volume,
+      sniped,
+      makerProfit,
+      sniperNet: sniperRewards.reduce((a, b) => a + b, 0),
+      speedSpend: picks.reduce((sum, a) => sum + ECO_SPEEDS[a].cost, 0),
+      investorCost: half * 100, // extra cost on a $10,000 trade (100 shares × half-spread)
+    },
+  };
+}
+
+export type EcoSummary = { half: number; avgEdge: number; volume: number; snipeRate: number; makerProfit: number; sniperNet: number; speedSpend: number; investorCost: number };
+
+/** Average of the last rounds — used for the charts and the verdict. */
+export function summarize(rounds: EcoRound[]): EcoSummary {
+  const n = Math.max(1, rounds.length);
+  const sum = (f: (r: EcoRound) => number) => rounds.reduce((a, r) => a + f(r), 0) / n;
+  return {
+    half: sum(r => r.half),
+    avgEdge: sum(r => r.avgEdge),
+    volume: sum(r => r.volume),
+    snipeRate: sum(r => (r.sniped ? 1 : 0)),
+    makerProfit: sum(r => r.makerProfit),
+    sniperNet: sum(r => r.sniperNet),
+    speedSpend: sum(r => r.speedSpend),
+    investorCost: sum(r => r.investorCost),
+  };
+}

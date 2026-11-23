@@ -174,18 +174,32 @@ export function DepthChart({
 export type Series = { label: string; color: string; points: number[] };
 
 /** Simple multi-line chart for values between 0 and 1 (shares of choices over time). */
-export function ShareChart({ series, width: W, height = 200, xLabel }: { series: Series[]; width: number; height?: number; xLabel: string }) {
-  const pad = { l: 34, r: 10, t: 10, b: 22 };
+export function ShareChart({
+  series,
+  width: W,
+  height = 200,
+  xLabel,
+  max = 1,
+  fmt = v => `${Math.round(v * 100)}%`,
+}: {
+  series: Series[];
+  width: number;
+  height?: number;
+  xLabel: string;
+  max?: number;
+  fmt?: (v: number) => string;
+}) {
+  const pad = { l: 44, r: 10, t: 10, b: 22 };
   const n = Math.max(2, ...series.map(s => s.points.length));
   const x = (i: number) => pad.l + (i / (n - 1)) * (W - pad.l - pad.r);
-  const y = (v: number) => pad.t + (1 - v) * (height - pad.t - pad.b);
+  const y = (v: number) => pad.t + (1 - Math.min(v, max) / max) * (height - pad.t - pad.b);
   return (
     <svg className="chart-svg" style={{ height }} viewBox={`0 0 ${W} ${height}`} role="img" aria-label="How often the agent chose each strategy">
-      {[0, 0.25, 0.5, 0.75, 1].map(v => (
+      {[0, 0.25, 0.5, 0.75, 1].map(f => f * max).map(v => (
         <g key={v}>
           <line className="grid" x1={pad.l} x2={W - pad.r} y1={y(v)} y2={y(v)} />
           <text className="axis" x={pad.l - 6} y={y(v) + 3.5} textAnchor="end">
-            {Math.round(v * 100)}%
+            {fmt(v)}
           </text>
         </g>
       ))}

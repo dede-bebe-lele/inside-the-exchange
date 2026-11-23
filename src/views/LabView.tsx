@@ -6,9 +6,12 @@ import type { MatchingRule } from '../engine';
 import { ChartFrame, ShareChart } from '../components/Charts';
 import {
   chooseAction,
+  ECO_DEFAULTS,
+  ecoRound,
   EDGE_PER_SHARE,
   learn,
   newBandit,
+  newEco,
   OVERFILL_COST,
   QUEUE_STRATEGIES,
   queueRound,
@@ -17,7 +20,12 @@ import {
   sniperReward,
   snipeStats,
   SPEED_LEVELS,
+  summarize,
   type Bandit,
+  type EcoAgents,
+  type EcoParams,
+  type EcoRound,
+  type EcoSummary,
   type Rng,
 } from '../lab';
 
@@ -309,6 +317,153 @@ function SnipingRace() {
   );
 }
 
+const ECO_ROUNDS = 5000;
+const ECO_PER_FRAME = 50;
+
+type Market = { params: EcoParams; agents: EcoAgents; rounds: EcoRound[]; rng: Rng };
+
+function Ecosystem() {
+  const [snipers, setSnipers] = useState(ECO_DEFAULTS.snipers);
+  const [jump, setJump] = useState(ECO_DEFAULTS.jump);
+  const [interval, setIntervalMs] = useState(50);
+  const [running, setRunning] = useState(false);
+  const [round, setRound] = useState(0);
+  const [hist, setHist] = useState<{ cont: EcoSummary; batch: EcoSummary }[]>([]);
+  const markets = useRef<{ cont: Market; batch: Market } | null>(null);
+
+  const start = () => {
+    const seed = Math.floor(Math.random() * 1e9);
+    const make = (batchMs: number | null): Market => {
+      const params = { ...ECO_DEFAULTS, snipers, jump, batchMs };
+      return { params, agents: newEco(params), rounds: [], rng: seeded(seed) };
+    };
+    markets.current = { cont: make(null), batch: make(interval) };
+    setHist([]);
+    setRound(0);
+    setRunning(true);
+  };
+
+  useEffect(() => {
+    if (!running) return;
+    let frame = 0;
+    let i = 0;
+    const points: { cont: EcoSummary; batch: EcoSummary }[] = [];
+    const tick = () => {
+      const m = markets.current!;
+      for (let k = 0; k < ECO_PER_FRAME && i < ECO_ROUNDS; k++, i++) {
+        for (const mk of [m.cont, m.batch]) {
+          const r = ecoRound(mk.agents, mk.params, mk.rng);
+          mk.agents = r.agents;
+          mk.rounds.push(r.round);
+        }
+        if (i % 25 === 24) points.push({ cont: summarize(m.cont.rounds.slice(-250)), batch: summarize(m.batch.rounds.slice(-250)) });
+      }
+      setHist([...points]);
+      setRound(i);
+      if (i < ECO_ROUNDS) frame = requestAnimationFrame(tick);
+      else setRunning(false);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [running]);
+
+  const last = hist[hist.length - 1];
+  const line = (f: (s: EcoSummary) => number) => [
+    { label: 'Continuous', color: 'var(--ask)', points: hist.map(h => f(h.cont)) },
+    { label: 'Batch auction', color: 'var(--bid)', points: hist.map(h => f(h.batch)) },
+  ];
+  const done = !running && hist.length > 0;
+
+  const Col = ({ title, s, tone }: { title: string; s?: EcoSummary; tone: string }) => (
+    <div className="eco-col">
+      <div className="eco-title">
+        <i className="swatch" style={{ background: tone }} /> {title}
+      </div>
+      <div className="metric-grid">
+        <div className="metric">
+          <span>Speed snipers buy</span>
+          <b>{s ? `${s.avgEdge.toFixed(2)} ms` : '—'}</b>
+          <small>{s ? `${money(s.speedSpend)} spent / round` : 'per sniper, on average'}</small>
+        </div>
+        <div className="metric">
+          <span>Spread Maya sets</span>
+          <b>{s ? money(2 * s.half, 3) : '—'}</b>
+          <small>{s ? `Maya earns ${money(s.makerProfit)} / round` : 'learned, not set by us'}</small>
+        </div>
+        <div className="metric">
+          <span>Shares investors trade</span>
+          <b>{s ? s.volume.toFixed(1) : '—'}</b>
+          <small>per round</small>
+        </div>
+        <div className="metric">
+          <span>Cost on a $10,000 trade</span>
+          <b>{s ? money(s.investorCost) : '—'}</b>
+          <small>{s ? `stale quotes sniped ${Math.round(s.snipeRate * 100)}%` : 'paid by investors'}</small>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <section className="card">
+      <div className="card-head">
+        <h3>
+          <Brain size={16} /> Experiment 3 · A market that learns
+        </h3>
+        <span className="tag">{round ? `${round.toLocaleString('en-US')} rounds` : 'multi-agent learning'}</span>
+      </div>
+      <div className="card-body">
+        <p className="hint" style={{ color: 'var(--text-2)', fontSize: 13, maxWidth: 900 }}>
+          Now <b>everyone</b> learns at the same time. Maya learns what spread to quote. Each sniper learns how much speed to buy. Investors trade less when the spread is wide. Nobody is told the rules or what the others do — and
+          because the others keep changing, each agent trusts recent results more than old ones. Two identical markets train side by side; the only difference is the matching rule.
+        </p>
+        <div className="eco-controls">
+          <Slider label="Snipers" value={snipers} min={1} max={5} step={1} onChange={setSnipers} fmt={v => String(v)} />
+          <Slider label="News moves the price by" value={jump} min={0.05} max={0.3} step={0.01} onChange={setJump} fmt={v => money(v)} />
+          <Slider label="Batch auction every" value={interval} min={5} max={100} step={5} onChange={setIntervalMs} fmt={v => `${v} ms`} />
+          <div className="mission-actions" style={{ alignSelf: 'end' }}>
+            <button className="btn primary" onClick={start} disabled={running}>
+              <Play size={14} /> {running ? 'Learning…' : hist.length ? 'Run again' : 'Run both markets'}
+            </button>
+          </div>
+        </div>
+        <div className="eco-grid">
+          <Col title="Continuous matching (today)" s={last?.cont} tone="var(--ask)" />
+          <Col title={`Batch auction every ${markets.current?.batch.params.batchMs ?? interval} ms`} s={last?.batch} tone="var(--bid)" />
+        </div>
+        {hist.length > 1 ? (
+          <div className="eco-grid" style={{ marginTop: 12 }}>
+            <div>
+              <span className="eyebrow">Speed bought by snipers (ms)</span>
+              <ChartFrame>{w => <ShareChart width={w} height={170} series={line(s => s.avgEdge)} max={1} fmt={v => v.toFixed(2)} xLabel={`round ${round}`} />}</ChartFrame>
+            </div>
+            <div>
+              <span className="eyebrow">Shares investors trade per round</span>
+              <ChartFrame>{w => <ShareChart width={w} height={170} series={line(s => s.volume)} max={ECO_DEFAULTS.demand} fmt={v => v.toFixed(0)} xLabel={`round ${round}`} />}</ChartFrame>
+            </div>
+          </div>
+        ) : null}
+        {done && last && (
+          <p className="verdict-box">
+            {last.cont.avgEdge > last.batch.avgEdge + 0.1 ? (
+              <>
+                With continuous matching the snipers <b>raced each other up to {last.cont.avgEdge.toFixed(2)} ms of speed</b> and spent {money(last.cont.speedSpend)} per round on it. Maya answered by widening her spread, so investors
+                traded {last.cont.volume.toFixed(0)} shares instead of {last.batch.volume.toFixed(0)} and paid {money(last.cont.investorCost)} instead of {money(last.batch.investorCost)} per $10,000. Nobody planned this — it{' '}
+                <b>emerged</b> from agents each chasing their own profit. In the batch auction, speed was worthless, so nobody bought it.
+              </>
+            ) : (
+              <>
+                This time the race was small (try more snipers or bigger news). Continuous: {last.cont.avgEdge.toFixed(2)} ms of speed, {money(last.cont.investorCost)} per $10,000. Batch: {last.batch.avgEdge.toFixed(2)} ms,{' '}
+                {money(last.batch.investorCost)}.
+              </>
+            )}
+          </p>
+        )}
+      </div>
+    </section>
+  );
+}
+
 export function LabView() {
   return (
     <div className="page">
@@ -324,6 +479,7 @@ export function LabView() {
       </div>
       <QueueRace />
       <SnipingRace />
+      <Ecosystem />
       <section className="card">
         <div className="card-head">
           <h3>Why this matters in the real world</h3>

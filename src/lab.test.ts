@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chooseAction, learn, newBandit, QUEUE_STRATEGIES, queueRound, seeded, sniperReward, snipeStats, SPEED_LEVELS, type QueueParams } from './lab';
+import { chooseAction, ECO_DEFAULTS, ecoRound, learn, learnRecent, newBandit, newEco, QUEUE_STRATEGIES, queueRound, seeded, sniperReward, snipeStats, SPEED_LEVELS, summarize, type EcoRound, type QueueParams } from './lab';
 
 const avg = (f: () => number, n = 3000) => {
   let s = 0;
@@ -67,5 +67,40 @@ describe('bandit', () => {
     b = learn(b, 0, 3);
     expect(b.values[0]).toBe(2);
     expect(b.counts).toEqual([2, 0]);
+  });
+});
+
+describe('experiment 3: a market that learns', () => {
+  const run = (batchMs: number | null, seed: number) => {
+    const p = { ...ECO_DEFAULTS, batchMs };
+    const rng = seeded(seed);
+    let agents = newEco(p);
+    const rounds: EcoRound[] = [];
+    for (let i = 0; i < 5000; i++) {
+      const r = ecoRound(agents, p, rng);
+      agents = r.agents;
+      rounds.push(r.round);
+    }
+    return summarize(rounds.slice(-1500));
+  };
+
+  it('continuous matching: snipers learn to race, the maker widens the spread, investors trade less', () => {
+    for (const seed of [1, 2]) {
+      const cont = run(null, seed);
+      const batch = run(50, seed);
+      expect(cont.avgEdge).toBeGreaterThan(0.2); // an arms race emerges
+      expect(batch.avgEdge).toBeLessThan(0.1); // nobody pays for speed
+      expect(cont.snipeRate).toBeGreaterThan(0.3);
+      expect(batch.snipeRate).toBeLessThan(0.05);
+      expect(batch.volume).toBeGreaterThan(cont.volume * 1.5); // more trading for investors
+      expect(batch.investorCost).toBeLessThan(cont.investorCost); // and it's cheaper
+    }
+  });
+
+  it('learnRecent weights recent rewards more than old ones', () => {
+    let b = newBandit(1);
+    b = learnRecent(b, 0, 10);
+    for (let i = 0; i < 100; i++) b = learnRecent(b, 0, 0);
+    expect(b.values[0]).toBeLessThan(0.1);
   });
 });
