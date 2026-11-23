@@ -115,7 +115,7 @@ npm test
 npm run build
 ```
 
-Pushing to `main` runs the tests, builds and deploys to GitHub Pages (`.github/workflows/deploy.yml`).
+`npm run deploy` runs the tests, builds, and publishes `dist/` to the `gh-pages` branch, which GitHub Pages serves (`scripts/deploy.sh`).
 
 ## Licence
 MIT — see `LICENSE`.
