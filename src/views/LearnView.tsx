@@ -82,6 +82,42 @@ export function LearnView() {
           </section>
           <section className="card">
             <div className="card-head">
+              <h3>Why it matters to you</h3>
+            </div>
+            <ul className="facts">
+              <li>
+                <b>It sets the prices you hear about.</b> “The stock market rose 2% today” means the last trades of thousands of matching engines were higher. Pension funds and savings plans are valued at these prices.
+              </li>
+              <li>
+                <b>It decides what you pay.</b> A market order walks the book: the bigger it is, the worse its average price. That cost — slippage — is invisible unless you know how matching works.
+              </li>
+              <li>
+                <b>Its rules are a choice.</b> Price-time, pro-rata and auctions are all used by real exchanges, and each rewards different behaviour: speed, size, or price. Regulators and economists still argue about which is fairest.
+              </li>
+            </ul>
+            <div className="card-head" style={{ paddingTop: 0 }}>
+              <h3>Read more</h3>
+            </div>
+            <ul className="facts sources">
+              <li>
+                <a href="https://academic.oup.com/qje/article/130/4/1547/1916146" target="_blank" rel="noreferrer">
+                  Budish, Cramton &amp; Shim — The High-Frequency Trading Arms Race (QJE, 2015)
+                </a>
+              </li>
+              <li>
+                <a href="https://www.iexexchange.io/" target="_blank" rel="noreferrer">
+                  IEX — the exchange with a 350-microsecond “speed bump”
+                </a>
+              </li>
+              <li>
+                <a href="http://incompleteideas.net/book/the-book-2nd.html" target="_blank" rel="noreferrer">
+                  Sutton &amp; Barto — Reinforcement Learning: An Introduction (free online)
+                </a>
+              </li>
+            </ul>
+          </section>
+          <section className="card">
+            <div className="card-head">
               <h3>What we simplified</h3>
             </div>
             <ul className="facts">

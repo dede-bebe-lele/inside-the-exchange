@@ -20,14 +20,23 @@ Every part of the site serves this one idea.
 
 ## What you can do
 
+### First visit: a welcome screen, four clicks, a short guide
+- **Welcome screen.** One question ("who sells it to you?") and three reasons it matters. One button starts the tour.
+- **Story.** Four clicks with two predictions, run by the real engine. While it runs, everything except the order book is dimmed, so you know where to look.
+- **Guide.** Five steps that highlight the order book, the order ticket, the rule switch, the market button and the other sections.
+- **Jargon explained in place.** Hover or tap *bid*, *ask*, *spread* or *volume* to see a one-sentence meaning.
+
 ### Simulator
 - **The queue, made visible.** Each waiting order is a chip with a trader's name. Its width is its size, and chips sit left to right in arrival order. Hover or tap a chip to see its place in line.
 - **Preview before you send.** The engine runs your order as a dry run. The exact chips it would trade with are hatched, and the ticket explains each fill in words. A table shows who you would trade with under the other rule.
 - **Three ways to match:** Price → Time, Price → Size, and **Batch auction**. In batch mode, orders wait and the book may "cross" (a bid above an ask). The auction then trades everything that can trade at **one price**: the price where the most shares change hands. Its supply and demand curves are drawn live.
-- **Start the market:** simulated traders keep sending orders. In batch mode an auction runs every few ticks.
+- **Start the market:** simulated traders keep sending orders.
+  - **Made-up news about ACME** (a fictional company) moves the "fair value", and informed traders push the price after it.
+  - In batch mode an auction runs every few ticks.
+  - If Rule Lab has trained its neural network, the order ticket shows its estimate of the chance that your waiting limit order gets a fill.
 - **Self-trade prevention:** your order never trades with your own waiting order. That order is cancelled instead, which is a real exchange feature.
 
-### First visit: four clicks, two predictions
+The four story steps:
 1. Buy 45 shares and see that you paid more than the price on screen.
 2. Bid instead, and join the queue behind another trader.
 3. **Predict:** a seller brings 25 shares, so how many do *you* get?
@@ -36,7 +45,11 @@ Every part of the site serves this one idea.
 Every answer is checked against what the engine actually did.
 
 ### Missions
-Nine hand-built order books, each showing one rule. The checklists tick themselves by checking the engine's state. The last mission is a challenge: buy 200 shares as cheaply as you can.
+Twelve missions with checklists that tick themselves by checking the engine's state, plus XP and levels:
+- **Missions 1–9:** hand-built order books, each showing one rule.
+- **Mission 10:** a batch auction where everyone trades at one price.
+- **Mission 11:** *Be the market maker*. Quote both sides and earn the spread while news tries to pick off your old prices.
+- **Mission 12:** buy 200 shares as cheaply as you can.
 
 ### Rule Lab
 Three experiments that send thousands of rounds through the same engine:
@@ -48,6 +61,13 @@ Three experiments that send thousands of rounds through the same engine:
    - **Small news (smaller than the market maker's normal spread):** both markets behave the same. Her old price is still above the new fair price, so there is nothing to snipe.
    - **Bigger news:** the batch auction keeps sniping at about 1% of news events, and investors trade about 1.7 to 23 times more.
    - **Continuous matching:** a speed race appears only in a middle zone of news size (5 of 16 settings). With large news the market maker stops quoting (4 of 16 settings).
+
+4. **A neural network learns what matters.** The question is: *will my waiting buy order get a fill within the next 25 market moves?*
+   - The engine and the simulated traders generate 3,000 situations per rule in the browser.
+   - Two small neural networks (7 inputs → 10 tanh neurons → 1 sigmoid output, backpropagation written by us, no ML library) learn to predict the answer: one on a price-time market, one on pro-rata.
+   - On situations they never saw, both beat "always guess the most common answer" (≈85% vs ≈70% and ≈84% vs ≈52%).
+   - *Permutation importance* shows that the price-time network relies on "shares ahead of me in the queue", and the pro-rata network almost ignores it. The networks discover the rule from data.
+   - A panel lets you move the inputs and ask both networks.
 
 ### Real market
 The live Bitcoin order book from Coinbase, with Kraken as a fallback, is copied into our engine. It answers: *what would a market order of X BTC cost right now, before fees?* The page shows the average price, slippage in basis points, the price levels eaten, and the depth chart. It only reads public data and never sends an order.
@@ -78,23 +98,24 @@ The engine is pure: every call returns a new state and never changes the old one
 
 ## What is computed and what is not
 
-Everything on screen is computed by the engine from the user's input: fills, prices, queue positions, the hatched previews, the auction price, the charts, the explanations, the experiments and the learners.
+Everything on screen is computed by the engine from the user's input: fills, prices, queue positions, the hatched previews, the auction price, the charts, the explanations, the experiments, the learners and the neural networks. The only decoration is the small animation on the welcome screen.
 
 The only fixed data is the starting order books of the missions (`src/lessons.ts`) and the parameters of the Rule Lab models (`src/lab.ts`). Those parameters are shown on screen, and the robustness check varies them. Random numbers come from a seeded generator, so experiments can be repeated.
 
 ## Known limitations
 - **The Rule Lab models are toys.** There is one market maker, who can therefore charge a monopolist's spread, news only moves prices up, and we chose the reaction times. The results describe *our* model, and the robustness check shows how much they depend on the settings.
-- **The learners are simple bandits, not neural networks.**
+- **The learners are simple.** Experiments 1–3 use bandits. Experiment 4's neural network is small, and it is only reliable inside the range of situations it was trained on (the "Ask the networks" sliders stay inside that range).
 - **Prices are decimals rounded to whole cents at every entry point,** not integer cents.
 - **No fees, short selling is allowed, and there is only one stock.**
 
 ## Tests
 
-`npm test` runs 59 tests. They cover:
+`npm test` runs 67 tests. They cover:
 - **Engine:** market and limit orders, partial fills, FIFO, price priority, never trading through a limit price, conservation of shares, immutability, self-trade prevention, and pro-rata with huge sizes.
 - **Batch auction:** the clearing price, marginal-level tie-breaks, market orders, and 300 random books. On every one the auction trades the maximum possible volume and leaves the book uncrossed.
 - **Missions:** every mission's claims and task checks.
 - **Rule Lab:** the learners find the true best choice, and the experiment 3 claims are checked across a grid of settings, not at one hand-picked point.
+- **Neural network:** backpropagation is checked against a numerical gradient, and the network can learn XOR. On engine data it beats the baseline, relies on the queue under price-time but not under pro-rata, and both claims are checked on two random seeds per rule.
 
 ## Project structure
 
@@ -103,11 +124,13 @@ The only fixed data is the starting order books of the missions (`src/lessons.ts
 | `src/engine.ts` | Continuous matching: validation, price-time and pro-rata allocation, self-trade prevention, execution reports |
 | `src/auction.ts` | The batch auction: demand/supply curve, clearing price, allocation, switching modes |
 | `src/lab.ts` | Rule Lab models (queue race, news race, multi-agent market) and the learners |
+| `src/neural.ts` | Experiment 4: data generation, the neural network, backpropagation, permutation importance |
+| `src/news.ts` | Made-up ACME headlines that move the simulated fair value |
 | `src/realMarket.ts` | Loads the live BTC book (Coinbase, then Kraken) into engine state |
 | `src/bots.ts` | Simulated traders |
 | `src/lessons.ts` | Missions and their auto-checked tasks |
 | `src/format.ts` | Formatting and the plain-language explanation of each execution |
-| `src/components/` | QueueBook, Ticket, Charts, Tape, Story, MissionCard, Shell |
+| `src/components/` | QueueBook, Ticket, Charts, Tape, Story, Splash, Tour, Term, MissionCard, Shell |
 | `src/views/` | Simulator, Missions, Rule Lab, Real market, How it works |
 
 ## Things we didn't make ourselves

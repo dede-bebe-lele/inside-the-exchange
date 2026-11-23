@@ -3,6 +3,7 @@ import type { AuctionResult } from '../auction';
 import type { EngineState, ExecutionReport, MarketMode, MatchingRule, Order } from '../engine';
 import { usd } from '../format';
 import type { Lesson } from '../lessons';
+import type { NewsItem } from '../news';
 import { AuctionChart, ChartFrame, DepthChart, PriceChart } from '../components/Charts';
 import { LastResult } from '../components/LastResult';
 import { MissionCard } from '../components/MissionCard';
@@ -30,6 +31,9 @@ type Props = {
   onRunAuction: () => void;
   auction: AuctionResult | null;
   auctionWithMine: { price: number | null; mine: number } | null;
+  fillChance: { p: number; accuracy: number } | null;
+  news: NewsItem[];
+  botsOn: boolean;
   showStory: boolean;
   onCloseStory: () => void;
   onStoryDone: () => void;
@@ -50,7 +54,8 @@ export function TradeView(p: Props) {
   return (
     <div className="page">
       {p.showStory && <Story state={p.state} setState={p.setState} onClose={p.onCloseStory} onDone={p.onStoryDone} />}
-      <div className="trade-grid">
+      {/* While the story runs, everything except the order book is dimmed, so a first-time visitor knows where to look. */}
+      <div className={`trade-grid${p.showStory ? ' focus' : ''}`}>
         <QueueBook
           state={p.state}
           preview={p.preview}
@@ -63,6 +68,23 @@ export function TradeView(p: Props) {
           className="area-book"
         />
         <div className="area-mid">
+        {(p.botsOn || p.news.length > 0) && (
+          <section className="card news-card" aria-live="polite" aria-label="News">
+            <span className="eyebrow">Newsflash · simulated</span>
+            {p.news.length ? (
+              <ul>
+                {p.news.slice(0, 3).map((n, i) => (
+                  <li key={n.id} className={i === 0 ? 'latest' : ''}>
+                    <span className={n.impact > 0 ? 'pos' : 'neg'}>{n.impact > 0 ? '▲' : '▼'}</span> {n.headline}
+                    <small className="muted"> · traders now value ACME {n.impact > 0 ? 'higher' : 'lower'}</small>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="hint">The market is live. When news about ACME breaks, watch traders rush to the new price.</p>
+            )}
+          </section>
+        )}
         <section className="card" aria-label="Chart">
           <div className="card-head">
             <h3>{tab === 'price' ? 'Trade prices' : tab === 'auction' ? 'Auction: supply meets demand' : 'Market depth'}</h3>
@@ -113,6 +135,7 @@ export function TradeView(p: Props) {
             preview={p.preview}
             altPreview={p.altPreview}
             auctionWithMine={p.auctionWithMine}
+            fillChance={p.fillChance}
             queuePosition={p.queuePosition}
             bestBid={p.bestBid}
             bestAsk={p.bestAsk}

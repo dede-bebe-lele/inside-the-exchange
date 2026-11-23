@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { botStep, replayRng } from './bots';
 import { bestAsk, bestBid, executeOrder, setRule, spread } from './engine';
 import { LESSONS } from './lessons';
+import { clearAuction } from './auction';
 
 const run = (id: string) => {
   const lesson = LESSONS.find(l => l.id === id)!;
@@ -97,7 +98,7 @@ describe('simulated market participants', () => {
 
 describe('mission tasks are checked by the real engine', () => {
   it("each mission's suggested order completes its first task", () => {
-    for (const m of LESSONS.filter(l => l.id !== 'challenge')) {
+    for (const m of LESSONS.filter(l => !l.liveMarket)) {
       const { state, report } = executeOrder(m.build(), m.order.side, m.order.type, m.order.quantity, m.order.price);
       expect(m.tasks[0].check({ state, reports: [report] }), m.id).toBe(true);
     }
@@ -109,5 +110,26 @@ describe('mission tasks are checked by the real engine', () => {
     const pr = executeOrder(setRule(m.build(), 'pro-rata'), 'buy', 'market', 50).report;
     expect(m.tasks[1].check({ state: m.build(), reports: [fifo] })).toBe(false);
     expect(m.tasks[1].check({ state: m.build(), reports: [pr] })).toBe(true);
+  });
+});
+
+describe('new missions', () => {
+  it('auction mission: the order waits, then trades at the single auction price', () => {
+    const m = LESSONS.find(l => l.id === 'auction')!;
+    const { state, report } = executeOrder(m.build(), 'buy', 'limit', 10, 100.2);
+    expect(report.status).toBe('queued');
+    const after = clearAuction(state).state;
+    expect(m.tasks[1].check({ state: after, reports: [report] })).toBe(true);
+    expect(m.tasks[2].check({ state: after, reports: [report] })).toBe(true);
+    const mine = after.trades.filter(t => t.buyerOwner === 'you');
+    expect(new Set(mine.map(t => t.price))).toEqual(new Set([100.1])); // paid the auction price, not the 100.20 limit
+  });
+
+  it('market-maker mission: a bid and an ask at once completes the first task', () => {
+    const m = LESSONS.find(l => l.id === 'market-maker')!;
+    let s = m.build();
+    s = executeOrder(s, 'buy', 'limit', 20, 99.95).state;
+    s = executeOrder(s, 'sell', 'limit', 20, 100.05).state;
+    expect(m.tasks[0].check({ state: s, reports: [] })).toBe(true);
   });
 });

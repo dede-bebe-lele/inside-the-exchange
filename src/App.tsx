@@ -4,6 +4,7 @@ import { CheckCircle2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { clearAuction, setMode } from './auction';
 import { botStep, replayRng } from './bots';
+import { makeNews, NEWS_CHANCE, type NewsItem } from './news';
 import {
   bestAsk as getBestAsk,
   bestBid as getBestBid,
@@ -22,8 +23,12 @@ import {
 } from './engine';
 import { LESSONS, type Lesson } from './lessons';
 import { Sidebar, TopBar, type Theme, type View } from './components/Shell';
+import { Splash } from './components/Splash';
+import { Tour } from './components/Tour';
 import type { TicketState } from './components/Ticket';
 import { load, save } from './storage';
+import { describe as describeOrder, predict, scale } from './neural';
+import { useModels } from './nnStore';
 import { LabView } from './views/LabView';
 import { LearnView } from './views/LearnView';
 import { LiveView } from './views/LiveView';
@@ -53,9 +58,14 @@ export default function App() {
   const [speed, setSpeed] = useState<string>(() => load('speed', 'normal'));
   const [theme, setTheme] = useState<Theme>(() => load('theme', 'system'));
   const [showStory, setShowStory] = useState<boolean>(() => !load('story-closed', false));
+  const [showSplash, setShowSplash] = useState<boolean>(() => !load('splash-seen', false));
+  const [showTour, setShowTour] = useState(false);
   const [progress, setProgress] = useState<Record<string, string[]>>(() => load('progress', {}));
   const [mission, setMission] = useState<{ lesson: Lesson; since: number } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  // What the stock is "really" worth in the simulation; news moves it, bots trade around it.
+  const fair = useRef(100);
+  const [news, setNews] = useState<NewsItem[]>([]);
 
   // --- routing (#/trade, #/missions, …) ---
   useEffect(() => {
@@ -115,6 +125,19 @@ export default function App() {
     const mine = r.trades.filter(t => t.buyerOrderId === id || t.sellerOrderId === id).reduce((a, t) => a + t.quantity, 0);
     return { price: r.price, mine };
   }, [batch, error, state, ticket.side, ticket.type, quantity, price]);
+  // If Rule Lab has trained a neural network for the current rule, ask it whether this
+  // limit order — once it is waiting in the book — is likely to get a fill.
+  const models = useModels();
+  const fillChance = useMemo(() => {
+    const model = models[state.rule];
+    if (!model || batch || error || ticket.type !== 'limit' || !preview || preview.restingQuantity === 0) return null;
+    const before = ticket.side === 'buy' ? getBestBid(state) : getBestAsk(state);
+    if (before === null) return null;
+    const next = executeOrder(state, ticket.side, ticket.type, quantity, price).state;
+    const id = state.nextOrderId;
+    if (!next.bids.some(o => o.id === id) && !next.asks.some(o => o.id === id)) return null;
+    return { p: predict(model.net, scale(describeOrder(next, id, before), model.scaler)), accuracy: model.accuracy };
+  }, [models, state, batch, error, ticket.type, ticket.side, quantity, price, preview]);
   const queuePosition =
     preview && preview.restingQuantity > 0 ? (ticket.side === 'buy' ? state.bids : state.asks).filter(o => o.price === preview.limitPrice).length + 1 : undefined;
 
@@ -138,7 +161,13 @@ export default function App() {
       // Random numbers are drawn here, outside the updater, so the updater stays pure.
       const draws = Array.from({ length: 12 }, Math.random);
       const auctionTurn = ++ticks.current % 5 === 0;
-      setState(s => (s.mode === 'batch' && auctionTurn ? clearAuction(s).state : botStep(s, replayRng(draws))));
+      if (Math.random() < NEWS_CHANCE) {
+        const item = makeNews(Math.random, ticks.current, ticks.current);
+        fair.current = Math.max(1, Math.round((fair.current + item.impact) * 100) / 100);
+        setNews(n => [item, ...n].slice(0, 6));
+      }
+      const f = fair.current;
+      setState(s => (s.mode === 'batch' && auctionTurn ? clearAuction(s).state : botStep(s, replayRng(draws), f)));
     }, SPEEDS[speed] ?? 850);
     return () => window.clearInterval(timer);
   }, [botsOn, speed]);
@@ -171,11 +200,15 @@ export default function App() {
   const reset = () => {
     setMission(null);
     setBotsOn(false);
+    fair.current = 100;
+    setNews([]);
     setState(s => ({ ...createInitialState(), rule: s.rule }));
     setTicket(DEFAULT_TICKET);
   };
   const startMission = (lesson: Lesson) => {
     const fresh = lesson.build();
+    fair.current = fresh.lastPrice;
+    setNews([]);
     setState(fresh);
     setMission({ lesson, since: fresh.clock });
     setBotsOn(!!lesson.liveMarket);
@@ -187,6 +220,13 @@ export default function App() {
     setShowStory(false);
     save('story-closed', true);
   };
+  const finishSplash = (tour: boolean) => {
+    setShowSplash(false);
+    save('splash-seen', true);
+    setShowStory(tour);
+    save('story-closed', !tour);
+    go('trade');
+  };
   const missionIndex = mission ? LESSONS.findIndex(l => l.id === mission.lesson.id) : -1;
   const missionsDone = LESSONS.filter(l => l.tasks.every(t => progress[l.id]?.includes(t.id))).length;
 
@@ -197,12 +237,13 @@ export default function App() {
         state={state}
         missionsDone={missionsDone}
         missionsTotal={LESSONS.length}
+        xp={Object.values(progress).reduce((a, t) => a + t.length, 0) * 100}
         dark={document.documentElement.dataset.theme === 'dark'}
         onToggleTheme={() => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark')}
         onReplayIntro={() => {
-          setShowStory(true);
-          save('story-closed', false);
-          go('trade');
+          setMission(null);
+          setBotsOn(false);
+          setShowSplash(true);
         }}
       />
       <main className="main">
@@ -243,8 +284,14 @@ export default function App() {
               onRunAuction={() => setState(s => clearAuction(s).state)}
               auction={auctionNow}
               auctionWithMine={auctionWithMine}
+              fillChance={fillChance}
+              news={news}
+              botsOn={botsOn}
               showStory={showStory}
-              onCloseStory={closeStory}
+              onCloseStory={() => {
+                closeStory();
+                setShowTour(true);
+              }}
               onStoryDone={() => save('story-closed', true)}
               mission={mission?.lesson ?? null}
               missionDone={mission ? progress[mission.lesson.id] ?? [] : []}
@@ -269,6 +316,8 @@ export default function App() {
         {view === 'live' && <LiveView />}
         {view === 'learn' && <LearnView />}
       </main>
+      {showSplash && <Splash onStart={() => finishSplash(true)} onSkip={() => finishSplash(false)} />}
+      {showTour && view === 'trade' && <Tour onClose={() => setShowTour(false)} />}
       {toast && (
         <div className="toast" role="status">
           <CheckCircle2 size={16} /> {toast.replace(/^✓ /, '')}

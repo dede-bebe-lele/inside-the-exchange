@@ -6,6 +6,7 @@ import { FlaskConical, Grid3x3, Play, RotateCcw } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { MatchingRule } from '../engine';
 import { ChartFrame, ShareChart } from '../components/Charts';
+import { NeuralLab } from './NeuralLab';
 import {
   chooseAction,
   ECO_DEFAULTS,
@@ -567,6 +568,7 @@ export function LabView() {
       <QueueRace />
       <SnipingRace />
       <Ecosystem />
+      <NeuralLab />
       <section className="card">
         <div className="card-head">
           <h3>Where this comes from — and what our model leaves out</h3>
@@ -580,8 +582,8 @@ export function LabView() {
             <b>Real exchanges experiment with this.</b> IEX, a US stock exchange, delays every incoming order by 350 microseconds (a “speed bump”). Most exchanges already use auctions to open and close each day.
           </li>
           <li>
-            <b>The learners are simple.</b> They are “epsilon-greedy bandits”: try options, keep a running average of each option's profit, usually pick the best, sometimes explore. That is the most basic form of reinforcement
-            learning — no neural network.
+            <b>Two kinds of learning.</b> Experiments 1–3 use “epsilon-greedy bandits”: try options, keep a running average of each option's profit, usually pick the best, sometimes explore — the most basic reinforcement
+            learning. Experiment 4 is a real (small) neural network: 7 inputs, 10 hidden neurons, 1 output, trained by backpropagation on data our engine generates. No machine-learning library is used.
           </li>
           <li>
             <b>What we left out:</b> one market maker (so she can charge more than a competitive one would), news that only pushes prices up (falling news is the mirror image), reaction times we chose (1–2 ms), snipers who only buy

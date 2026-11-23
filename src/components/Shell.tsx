@@ -2,6 +2,7 @@ import { BarChart3, BookOpen, CandlestickChart, Flag, FlaskConical, Moon, Pause,
 import type { ReactNode } from 'react';
 import { portfolioValue, STARTING_CASH, type EngineState } from '../engine';
 import { signed, usd } from '../format';
+import { Term } from './Term';
 
 export type View = 'trade' | 'missions' | 'lab' | 'live' | 'learn';
 export type Theme = 'system' | 'light' | 'dark';
@@ -14,13 +15,13 @@ const NAV: { id: View; label: string; icon: ReactNode }[] = [
   { id: 'learn', label: 'How it works', icon: <BookOpen size={18} /> },
 ];
 
-type SidebarProps = { view: View; state: EngineState; missionsDone: number; missionsTotal: number; dark: boolean; onToggleTheme: () => void; onReplayIntro: () => void };
+type SidebarProps = { view: View; state: EngineState; missionsDone: number; missionsTotal: number; xp: number; dark: boolean; onToggleTheme: () => void; onReplayIntro: () => void };
 
-export function Sidebar({ view, state, missionsDone, missionsTotal, dark, onToggleTheme, onReplayIntro }: SidebarProps) {
+export function Sidebar({ view, state, missionsDone, missionsTotal, xp, dark, onToggleTheme, onReplayIntro }: SidebarProps) {
   const value = portfolioValue(state);
   const pnl = value - STARTING_CASH;
   return (
-    <nav className="sidebar" aria-label="Main">
+    <nav className="sidebar" aria-label="Main" data-tour="nav">
       <a className="logo" href="#/trade">
         <span className="logo-mark" aria-hidden>
           <BarChart3 size={18} strokeWidth={2.4} />
@@ -43,6 +44,15 @@ export function Sidebar({ view, state, missionsDone, missionsTotal, dark, onTogg
         </a>
       ))}
       <div className="sidebar-foot">
+        <div className="xp" title="100 XP for every mission task you complete">
+          <div className="row">
+            <b>Level {Math.floor(xp / 500) + 1}</b>
+            <span>{xp} XP</span>
+          </div>
+          <div className="progress-bar">
+            <i style={{ width: `${((xp % 500) / 500) * 100}%` }} />
+          </div>
+        </div>
         <div className="foot-actions">
           <button className="btn sm ghost" onClick={onReplayIntro}>
             <Sparkles size={14} /> Replay intro
@@ -105,19 +115,27 @@ export function TopBar({ state, prevPrice, bestBid, bestAsk, spread, botsOn, spe
       </div>
       <div className="stats">
         <div className="stat" title="Highest price a buyer is waiting to pay">
-          <span>Best bid</span>
+          <span>
+            Best <Term k="bid">bid</Term>
+          </span>
           <b className="bid-c">{usd(bestBid)}</b>
         </div>
         <div className="stat" title="Lowest price a seller is waiting to accept">
-          <span>Best ask</span>
+          <span>
+            Best <Term k="ask">ask</Term>
+          </span>
           <b className="ask-c">{usd(bestAsk)}</b>
         </div>
         <div className="stat" title="Best ask minus best bid">
-          <span>Spread</span>
+          <span>
+            <Term k="spread">Spread</Term>
+          </span>
           <b>{usd(spread)}</b>
         </div>
         <div className="stat opt">
-          <span>Volume</span>
+          <span>
+            <Term k="volume">Volume</Term>
+          </span>
           <b>{volume.toLocaleString('en-US')}</b>
         </div>
         <div className="stat mobile-only" title="Your simulated account">
@@ -126,7 +144,7 @@ export function TopBar({ state, prevPrice, bestBid, bestAsk, spread, botsOn, spe
         </div>
       </div>
       <div className="topbar-actions">
-        <button className={`btn live${botsOn ? ' on' : ''}`} onClick={onToggleBots} aria-pressed={botsOn} title="Simulated traders keep sending orders">
+        <button data-tour="market" className={`btn live${botsOn ? ' on' : ''}`} onClick={onToggleBots} aria-pressed={botsOn} title="Simulated traders keep sending orders">
           {botsOn ? <Pause size={14} /> : <Play size={14} />}
           <span className="lbl">{botsOn ? 'Market live' : 'Start market'}</span>
         </button>

@@ -6,6 +6,7 @@ import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import type { AuctionResult } from '../auction';
 import { queuePositions, spread as getSpread, midPrice, type EngineState, type ExecutionReport, type MarketMode, type MatchingRule, type Order } from '../engine';
 import { traderName, usd } from '../format';
+import { Term } from './Term';
 
 type Level = { price: number; orders: Order[]; total: number };
 
@@ -171,9 +172,10 @@ export function QueueBook({
   };
 
   return (
-    <section className={`card ${className}`} aria-label={title}>
+    <section className={`card ${className}`} aria-label={title} data-tour="book">
       <div className="card-head">
         <h3>{title}</h3>
+        <div className="rule-toggles" data-tour="rules">
         {onModeChange && (
           <div className="seg" role="group" aria-label="When orders are matched">
             <button className={batch ? '' : 'on'} aria-pressed={!batch} onClick={() => onModeChange('continuous')}>
@@ -194,6 +196,7 @@ export function QueueBook({
             </button>
           </div>
         )}
+        </div>
       </div>
       {batch && (
         <div className="auction-bar">
@@ -232,11 +235,11 @@ export function QueueBook({
       <div className="book-legend">
         <span>
           <i className="lg-ask" />
-          sellers (asks)
+          sellers (<Term k="ask">asks</Term>)
         </span>
         <span>
           <i className="lg-bid" />
-          buyers (bids)
+          buyers (<Term k="bid">bids</Term>)
         </span>
         <span>
           <i className="lg-you" />
@@ -263,7 +266,8 @@ export function QueueBook({
             </>
           ) : (
             <>
-              Spread<b>{spread === null ? '—' : fmtPrice(spread)}</b>
+              <Term k="spread">Spread</Term>
+              <b>{spread === null ? '—' : fmtPrice(spread)}</b>
             </>
           )}
         </span>

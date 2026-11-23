@@ -14,6 +14,7 @@ type Props = {
   preview: ExecutionReport | null;
   altPreview: ExecutionReport | null;
   auctionWithMine?: { price: number | null; mine: number } | null;
+  fillChance?: { p: number; accuracy: number } | null;
   queuePosition?: number;
   bestBid: number | null;
   bestAsk: number | null;
@@ -23,7 +24,7 @@ type Props = {
 
 const QUICK = [10, 25, 50, 100];
 
-export function Ticket({ ticket, onChange, onSubmit, error, preview, altPreview, auctionWithMine, queuePosition, bestBid, bestAsk, myOrders, onCancel }: Props) {
+export function Ticket({ ticket, onChange, onSubmit, error, preview, altPreview, auctionWithMine, fillChance, queuePosition, bestBid, bestAsk, myOrders, onCancel }: Props) {
   const set = (patch: Partial<TicketState>) => onChange({ ...ticket, ...patch });
   const nudge = (ticks: number) => {
     const p = Number(ticket.price);
@@ -33,7 +34,7 @@ export function Ticket({ ticket, onChange, onSubmit, error, preview, altPreview,
   const cost = preview?.averagePrice != null ? preview.averagePrice * preview.filledQuantity : null;
 
   return (
-    <section className="card" aria-label="Place an order">
+    <section className="card" aria-label="Place an order" data-tour="ticket">
       <div className="card-head">
         <h3>Place an order</h3>
         <span className="tag">{ticket.type === 'market' ? 'Trades now' : 'Your price or better'}</span>
@@ -136,6 +137,12 @@ export function Ticket({ ticket, onChange, onSubmit, error, preview, altPreview,
                   {auctionWithMine.price === null
                     ? 'If the auction ran right now, nothing would trade — no buyer and seller would agree on a price.'
                     : `If the auction ran right now, everything would trade at ${usd(auctionWithMine.price)} and you would get ${auctionWithMine.mine} share${auctionWithMine.mine === 1 ? '' : 's'}.`}
+                </p>
+              )}
+              {fillChance && (
+                <p className="insight nn">
+                  <b>Neural network says: {Math.round(fillChance.p * 100)}%</b> chance someone trades with your waiting order within 25 market moves (it was right {Math.round(fillChance.accuracy * 100)}% of the time on
+                  situations it never saw — trained in Rule Lab).
                 </p>
               )}
               {preview.status !== 'queued' && altPreview && <RuleComparison a={preview} b={altPreview} />}

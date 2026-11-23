@@ -1,7 +1,8 @@
 // Missions: each one loads a small, hand-made order book, pre-fills an order that
 // demonstrates exactly one concept of the matching engine, and lists tasks that the
 // app ticks off by checking the engine's real state and execution reports.
-import { createInitialState, stateFromBook, type EngineState, type ExecutionReport, type OrderType, type Side } from './engine';
+import { setMode } from './auction';
+import { createInitialState, portfolioValue, STARTING_CASH, stateFromBook, submitOrder, type EngineState, type ExecutionReport, type OrderType, type Side } from './engine';
 
 /** What a task can look at: the current book and the user's orders since the mission started. */
 export type MissionContext = { state: EngineState; reports: ExecutionReport[] };
@@ -177,8 +178,53 @@ export const LESSONS: Lesson[] = [
     ],
   },
   {
+    id: 'auction',
+    number: 10,
+    title: 'One price for everyone',
+    concept: 'Batch auction',
+    task: 'This market is collecting orders for an auction — look, buyers bid MORE than sellers ask, yet nothing trades. Send a buy at $100.20, then press “Run auction” on the order book. Everyone trades at one price.',
+    takeaway:
+      'The auction picked the single price where the most shares could change hands, and everybody traded at it — even you, though you were willing to pay more. Arriving a moment earlier didn’t matter. Real exchanges open and close each day this way.',
+    build: () => {
+      let s = setMode(stateFromBook([]), 'batch');
+      const book: Array<[Side, number, number]> = [
+        ['buy', 100.2, 20],
+        ['buy', 100.1, 30],
+        ['buy', 100, 40],
+        ['sell', 99.9, 25],
+        ['sell', 100, 20],
+        ['sell', 100.1, 30],
+      ];
+      for (const [side, price, qty] of book) s = submitOrder(s, side, 'limit', qty, price, 'market');
+      return { ...s, activity: [] };
+    },
+    order: { side: 'buy', type: 'limit', quantity: 10, price: 100.2 },
+    tasks: [
+      { id: 'queue', text: 'Send an order while the market is collecting', check: ({ reports }) => reports.some(r => r.status === 'queued') },
+      { id: 'run', text: 'Run the auction', check: ({ state }) => state.activity.some(e => e.kind === 'auction' && e.volume > 0) },
+      { id: 'one', text: 'Trade at the single auction price', check: ({ state }) => state.trades.some(t => t.aggressor === 'auction' && (t.buyerOwner === 'you' || t.sellerOwner === 'you')) },
+    ],
+  },
+  {
+    id: 'market-maker',
+    number: 11,
+    title: 'Be the market maker',
+    concept: 'Spread · Inventory · News risk',
+    task: 'Real markets work because someone always offers to buy AND sell. That’s you now. Keep a bid below and an ask above the price, earn the gap when others trade with you — and watch out: when news breaks, your old prices can be picked off.',
+    takeaway:
+      'You earned the spread from impatient traders, but news is your enemy: when the fair price jumps, whoever is fastest trades against your old quote. That risk is why market makers widen their spreads — and why the Rule Lab asks whether a different rule could protect them.',
+    build: createInitialState,
+    order: { side: 'buy', type: 'limit', quantity: 20, price: 99.95 },
+    liveMarket: true,
+    tasks: [
+      { id: 'both', text: 'Have a bid and an ask waiting at the same time', check: ({ state }) => state.bids.some(o => o.owner === 'you') && state.asks.some(o => o.owner === 'you') },
+      { id: 'twoway', text: 'Get filled on both sides — someone buys from you AND sells to you', check: ({ state }) => state.trades.some(t => t.sellerOwner === 'you' && t.aggressor === 'buy') && state.trades.some(t => t.buyerOwner === 'you' && t.aggressor === 'sell') },
+      { id: 'profit', text: 'Be $5 up overall (valued at the last price)', check: ({ state }) => portfolioValue(state) - STARTING_CASH >= 5 },
+    ],
+  },
+  {
     id: 'challenge',
-    number: 9,
+    number: 12,
     title: 'Challenge: buy 200 shares cheaply',
     concept: 'Final challenge · Execution cost',
     task: 'The market is live and other traders keep arriving. Buy 200 shares while paying as little as possible. Market orders are fast but cross the spread; limit orders are cheaper but you have to wait in the queue.',
