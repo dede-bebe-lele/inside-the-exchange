@@ -1,13 +1,14 @@
-import { BarChart3, BookOpen, CandlestickChart, Flag, Pause, Play, Radio, RotateCcw, Settings } from 'lucide-react';
+import { BarChart3, BookOpen, CandlestickChart, Flag, FlaskConical, Pause, Play, Radio, RotateCcw, Settings } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { portfolioValue, STARTING_CASH, type EngineState } from '../engine';
 import { signed, usd } from '../format';
 
-export type View = 'trade' | 'missions' | 'live' | 'learn' | 'stats' | 'settings';
+export type View = 'trade' | 'missions' | 'lab' | 'live' | 'learn' | 'stats' | 'settings';
 
 const NAV: { id: View; label: string; icon: ReactNode }[] = [
   { id: 'trade', label: 'Simulator', icon: <CandlestickChart size={18} /> },
   { id: 'missions', label: 'Missions', icon: <Flag size={18} /> },
+  { id: 'lab', label: 'Rule Lab', icon: <FlaskConical size={18} /> },
   { id: 'live', label: 'Real market', icon: <Radio size={18} /> },
   { id: 'learn', label: 'How it works', icon: <BookOpen size={18} /> },
   { id: 'stats', label: 'Your stats', icon: <BarChart3 size={18} /> },
@@ -38,6 +39,7 @@ export function Sidebar({ view, state, missionsDone, missionsTotal }: { view: Vi
             </span>
           )}
           {n.id === 'live' && <i className="live-dot on" aria-hidden />}
+          {n.id === 'lab' && <span className="badge new">AI</span>}
         </a>
       ))}
       <div className="sidebar-foot">

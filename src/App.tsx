@@ -21,6 +21,7 @@ import { LESSONS, type Lesson } from './lessons';
 import { Sidebar, TopBar, type View } from './components/Shell';
 import type { TicketState } from './components/Ticket';
 import { load, save } from './storage';
+import { LabView } from './views/LabView';
 import { LearnView } from './views/LearnView';
 import { LiveView } from './views/LiveView';
 import { MissionsView } from './views/MissionsView';
@@ -30,7 +31,7 @@ import { TradeView } from './views/TradeView';
 
 const SPEEDS: Record<string, number> = { slow: 1800, normal: 850, fast: 300 };
 const DEFAULT_TICKET: TicketState = { side: 'buy', type: 'market', quantity: '10', price: '100.00' };
-const VIEWS: View[] = ['trade', 'missions', 'live', 'learn', 'stats', 'settings'];
+const VIEWS: View[] = ['trade', 'missions', 'lab', 'live', 'learn', 'stats', 'settings'];
 
 const viewFromHash = (): View => {
   const v = window.location.hash.replace('#/', '') as View;
@@ -223,6 +224,7 @@ export default function App() {
           </>
         )}
         {view === 'missions' && <MissionsView missions={LESSONS} progress={progress} onStart={startMission} />}
+        {view === 'lab' && <LabView />}
         {view === 'live' && <LiveView />}
         {view === 'learn' && <LearnView />}
         {view === 'stats' && <StatsView state={state} />}

@@ -28,6 +28,14 @@ Every number in the story is computed by the engine, not written in advance.
 ### Missions
 Nine order books built by hand, each showing one rule: walking the book, FIFO, price beats time, resting limits, price improvement, partial fills, running out of liquidity, and pro-rata vs FIFO. A final challenge asks you to buy 200 shares as cheaply as you can. The checklists tick themselves by checking the engine's real state.
 
+### Rule Lab — experiments + a learning AI trader
+The matching rule doesn't just decide one trade. It decides **what traders compete on**. Two experiments run thousands of rounds through the same engine:
+
+1. **Speed or size?** You and three rivals queue at one price. An AI agent (an epsilon-greedy bandit, the simplest kind of reinforcement learning, written by us and run in the browser) is never told the rule. It only sees its profit. Under **price-time** it learns to *pay for speed*; under **pro-rata** it learns to *post big orders*.
+2. **The sniping race**, based on Budish, Cramton & Shim, *The High-Frequency Trading Arms Race* (QJE, 2015). News makes a market maker's price stale, and she races a sniper to fix it. With **continuous** matching, a tiny speed edge wins most races, so the market maker widens her spread and ordinary investors pay for the race. With a **batch auction**, speed differences stop mattering: the AI sniper learns to buy *no* speed, and the spread nearly disappears.
+
+Every number is computed. `src/lab.test.ts` checks that the agent really learns these outcomes.
+
 ### Real market
 The **live Bitcoin order book** from Coinbase, with Kraken as a fallback, loaded straight from their public APIs. No key is needed and nothing is sent to the exchanges. Our own engine answers *“what would buying 1 BTC cost right now?”* It shows the average price, slippage in basis points, the number of price levels eaten, and the exact orders consumed.
 
@@ -62,14 +70,15 @@ Everything on the trading screens is computed by the engine from the user's inpu
 
 ## Tests
 
-`npm test` runs 40 tests. They cover:
+`npm test` runs 46 tests. They cover:
 - market and limit orders, partial fills, and FIFO queue order;
 - price priority across levels, and never trading through a limit price;
 - conservation of shares, and the book never being left crossed;
 - pro-rata allocation invariants, checked on 500 random cases;
 - immutability of the engine state;
 - every mission's claims and task checks;
-- 2,000 steps of simulated traders.
+- 2,000 steps of simulated traders;
+- that the Rule Lab agent learns *fast* under FIFO, *big* under pro-rata, and *no speed* under batch auctions.
 
 ## Project structure
 
@@ -78,6 +87,7 @@ Everything on the trading screens is computed by the engine from the user's inpu
 | `src/engine.ts` | The matching engine: validation, price-time and pro-rata allocation, execution reports |
 | `src/realMarket.ts` | Loads the live BTC book (Coinbase, then Kraken) and turns it into engine state |
 | `src/bots.ts` | Simulated traders |
+| `src/lab.ts` | Rule Lab: queue race, sniping race, and the learning agent (bandit) |
 | `src/lessons.ts` | Missions, with their order books and auto-checked tasks |
 | `src/format.ts` | Formatting and the plain-language explanation of each execution |
 | `src/components/` | QueueBook (the visual order book), Ticket, Charts, Tape, Story, MissionCard, Shell |
