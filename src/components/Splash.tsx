@@ -2,10 +2,14 @@
 // and one button to start the one-minute tour. The little queue animation is
 // decoration (it is the only thing on the site that isn't computed by the engine).
 import { ArrowRight, Globe2, Scale, Timer } from 'lucide-react';
+import { useEffect, useRef } from 'react';
 
 type Props = { onStart: () => void; onSkip: () => void };
 
 export function Splash({ onStart, onSkip }: Props) {
+  // Focus the main button for keyboard users, without scrolling the title off a small screen.
+  const start = useRef<HTMLButtonElement>(null);
+  useEffect(() => start.current?.focus({ preventScroll: true }), []);
   return (
     <div className="splash" role="dialog" aria-modal="true" aria-labelledby="splash-title">
       <div className="splash-card">
@@ -47,7 +51,7 @@ export function Splash({ onStart, onSkip }: Props) {
           </div>
         </div>
         <div className="splash-actions">
-          <button className="btn primary big" onClick={onStart} autoFocus>
+          <button className="btn primary big" onClick={onStart} ref={start}>
             Start the 1-minute tour <ArrowRight size={16} />
           </button>
           <button className="btn ghost" onClick={onSkip}>

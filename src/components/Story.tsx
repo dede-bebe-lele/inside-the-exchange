@@ -16,6 +16,9 @@ export function Story({ state, setState, onClose, onDone }: Props) {
   const [rival, setRival] = useState<{ id: number; size: number } | null>(null);
   const [snapshot, setSnapshot] = useState<EngineState | null>(null);
 
+  const [nudge, setNudge] = useState(false);
+  const small = () => window.innerWidth < 900;
+
   const finish = (i: number, node: ReactNode) => {
     setText(t => {
       const next = t.slice(0, i);
@@ -24,6 +27,15 @@ export function Story({ state, setState, onClose, onDone }: Props) {
     });
     setStep(i + 1);
     if (i === 3) onDone();
+    // On a phone the order book is below the story: show it, then offer a way back.
+    if (small()) {
+      window.setTimeout(() => document.querySelector('[data-tour="book"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
+      setNudge(true);
+    }
+  };
+  const backToStory = () => {
+    setNudge(false);
+    document.getElementById('story-title')?.closest('section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   const step1 = () => {
@@ -143,6 +155,11 @@ export function Story({ state, setState, onClose, onDone }: Props) {
           </li>
         ))}
       </ol>
+      {nudge && (
+        <button className="story-nudge" onClick={backToStory}>
+          {step >= 4 ? 'See what it means ↑' : `Next: step ${step + 1} ↑`}
+        </button>
+      )}
       {step >= 4 && (
         <div className="story-end">
           <span>

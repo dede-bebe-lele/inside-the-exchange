@@ -572,3 +572,17 @@ a { color: var(--accent); }
 .ask-out .metric b { font-size: 26px; }
 .insight.nn { background: color-mix(in srgb, var(--amber) 14%, transparent); }
 @media (max-width: 760px) { .imp-row, .ask-net { grid-template-columns: 1fr; } }
+
+/* ---------- Phones: compact welcome + story ---------- */
+.story-nudge { display: none; }
+@media (max-width: 900px) {
+  .story-nudge { display: block; position: fixed; z-index: 40; left: 50%; bottom: 74px; transform: translateX(-50%); border: 0; border-radius: 999px; padding: 10px 18px; background: var(--accent); color: #fff; font-weight: 700; font-size: 13.5px; box-shadow: var(--shadow-lg); animation: rise 0.3s ease-out; }
+  .story-step.later { display: none; }
+}
+@media (max-width: 700px) {
+  .why-grid > div span { display: none; }
+  .why-grid { gap: 8px; margin-top: 14px; }
+  .why-grid > div { flex-direction: row; align-items: center; gap: 10px; padding: 10px 12px; }
+  .splash-art { display: none; }
+  .splash { place-items: start center; }
+}
