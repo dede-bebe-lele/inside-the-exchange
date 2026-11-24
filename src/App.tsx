@@ -3,6 +3,8 @@
 import { CheckCircle2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { clearAuction, setMode } from './auction';
+import { applyAction, CHALLENGE_TICKS, decodeRun, encodeRun, finishSim, reachedTarget, replay, startSim, stepSim, todaysSeed, type Action, type ActionInput, type Sim } from './challenge';
+import { ChallengeBar, type ChallengeView } from './components/ChallengeBar';
 import { botStep, replayRng } from './bots';
 import { makeNews, NEWS_CHANCE, type NewsItem } from './news';
 import {
@@ -41,6 +43,7 @@ const DEFAULT_TICKET: TicketState = { side: 'buy', type: 'market', quantity: '10
 const VIEWS: View[] = ['trade', 'missions', 'lab', 'live', 'learn'];
 
 const viewFromHash = (): View => {
+  if (window.location.hash.startsWith('#/replay')) return 'trade';
   const v = window.location.hash.replace('#/', '') as View;
   return VIEWS.includes(v) ? v : 'trade';
 };
@@ -80,6 +83,47 @@ export default function App() {
   const [progress, setProgress] = useState<Record<string, string[]>>(() => load('progress', {}));
   const [mission, setMission] = useState<{ lesson: Lesson; since: number } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  // The fair challenge: the market is driven by a seed, and every action is recorded with its tick.
+  type Run = ChallengeView & { actions: Action[]; replayOf?: { actions: Action[]; end: number } };
+  const [run, setRunState] = useState<Run | null>(null);
+  const runRef = useRef<Run | null>(null);
+  const sim = useRef<Sim | null>(null);
+  const setRun = (r: Run | null) => {
+    runRef.current = r;
+    setRunState(r);
+  };
+  const showSim = (s: Sim) => {
+    sim.current = s;
+    setState(s.state);
+    setNews(s.news);
+  };
+  // The bar to beat: do nothing, then buy all 200 at market when time runs out.
+  const rushCost = (seed: number) => replay(seed, [], CHALLENGE_TICKS).result.avgCost;
+  const startChallenge = (seed: number, replayOf?: { actions: Action[]; end: number }) => {
+    showSim(startSim());
+    setRun({ seed, tick: 0, watching: !!replayOf, rush: rushCost(seed), actions: [], replayOf });
+    setBotsOn(true);
+  };
+  const endChallenge = (s: Sim, r: Run) => {
+    const done = finishSim(s);
+    showSim(done.sim);
+    setBotsOn(false);
+    const actions = r.replayOf ? r.replayOf.actions : r.actions;
+    setRun({ ...r, tick: s.tick, result: { ...done.result, actions: actions.length }, code: encodeRun(r.seed, actions, s.tick) });
+  };
+  /** The player acts during a live challenge: record the action with the current tick, then apply it. */
+  const challengeAct = (a: ActionInput) => {
+    const r = runRef.current;
+    if (!r || r.result || r.watching || !sim.current) return false;
+    const action = { ...a, t: sim.current.tick } as Action;
+    const s = applyAction(sim.current, action);
+    const next = { ...r, actions: [...r.actions, action] };
+    showSim(s);
+    setRun(next);
+    if (reachedTarget(s)) endChallenge(s, next);
+    return true;
+  };
+
   // What the stock is "really" worth in the simulation; news moves it, bots trade around it.
   const fair = useRef(100);
   const [news, setNews] = useState<NewsItem[]>([]);
@@ -175,6 +219,20 @@ export default function App() {
   useEffect(() => {
     if (!botsOn) return;
     const timer = window.setInterval(() => {
+      // During a challenge (or a replay of one) the market is driven by the seed, not Math.random.
+      const r = runRef.current;
+      if (r && !r.result && sim.current) {
+        let s = sim.current;
+        if (r.replayOf) for (const a of r.replayOf.actions.filter(x => x.t === s.tick)) s = applyAction(s, a);
+        const end = r.replayOf ? r.replayOf.end : CHALLENGE_TICKS;
+        if (s.tick >= end || reachedTarget(s)) return endChallenge(s, r);
+        s = stepSim(s, r.seed);
+        showSim(s);
+        const next = { ...r, tick: s.tick };
+        setRun(next);
+        if (!r.replayOf && (s.tick >= CHALLENGE_TICKS || reachedTarget(s))) endChallenge(s, next);
+        return;
+      }
       // Random numbers are drawn here, outside the updater, so the updater stays pure.
       const draws = Array.from({ length: 12 }, Math.random);
       const auctionTurn = ++ticks.current % 5 === 0;
@@ -212,9 +270,22 @@ export default function App() {
   // --- actions ---
   const send = () => {
     if (error) return;
+    if (runRef.current && !runRef.current.result) {
+      if (runRef.current.watching) return setToast('Watching a replay — press “Play this market myself” to play.');
+      challengeAct({ kind: 'order', side: ticket.side, type: ticket.type, qty: quantity, price });
+      return;
+    }
     setState(s => submitOrder(s, ticket.side, ticket.type, quantity, price));
   };
+  const cancel = (id: number) => {
+    if (runRef.current && !runRef.current.result) {
+      challengeAct({ kind: 'cancel', id });
+      return;
+    }
+    setState(s => cancelOrder(s, id));
+  };
   const reset = () => {
+    setRun(null);
     setMission(null);
     setBotsOn(false);
     fair.current = 100;
@@ -223,6 +294,7 @@ export default function App() {
     setTicket(DEFAULT_TICKET);
   };
   const startMission = (lesson: Lesson) => {
+    setRun(null);
     const fresh = lesson.build();
     fair.current = fresh.lastPrice;
     setNews([]);
@@ -231,8 +303,23 @@ export default function App() {
     setBotsOn(!!lesson.liveMarket);
     setShowStory(false);
     setTicket({ side: lesson.order.side, type: lesson.order.type, quantity: String(lesson.order.quantity), price: (lesson.order.price ?? 100).toFixed(2) });
+    if (lesson.id === 'challenge') startChallenge(todaysSeed());
     go('trade');
   };
+
+  // Opening a shared link (#/replay?c=…) replays that game on the same market.
+  useEffect(() => {
+    const m = window.location.hash.match(/^#\/replay\?c=([\w-]+)/);
+    if (!m) return;
+    const decoded = decodeRun(m[1]);
+    if (!decoded) return setToast('That replay link is broken.');
+    setShowSplash(false);
+    setShowStory(false);
+    setSpeed('fast');
+    startChallenge(decoded.seed, { actions: decoded.actions, end: decoded.end });
+    window.history.replaceState(null, '', '#/trade');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const closeStory = () => {
     setShowStory(false);
     save('story-closed', true);
@@ -278,7 +365,7 @@ export default function App() {
               onToggleBots={() => setBotsOn(b => !b)}
               onSpeed={setSpeed}
               onReset={reset}
-              locked={showStory}
+              locked={showStory || (!!run && !run.result)}
             />
             <TradeView
               state={state}
@@ -297,9 +384,27 @@ export default function App() {
               bestAsk={bestAsk}
               lastReport={lastReport}
               onSubmit={send}
-              onCancel={id => setState(s => cancelOrder(s, id))}
+              onCancel={cancel}
               onRule={r => setState(s => setRule(s, r))}
               onMode={(m: MarketMode) => setState(s => setMode(s, m))}
+              locked={!!run && !run.result}
+              sideTop={
+                run ? (
+                  <ChallengeBar
+                    run={run}
+                    state={state}
+                    onFinish={() => sim.current && runRef.current && endChallenge(sim.current, runRef.current)}
+                    onWatch={() => {
+                      const r = runRef.current;
+                      if (r?.code) {
+                        const d = decodeRun(r.code)!;
+                        startChallenge(d.seed, { actions: d.actions, end: d.end });
+                      }
+                    }}
+                    onPlayAgain={() => startChallenge(run.seed)}
+                  />
+                ) : null
+              }
               onRunAuction={() => setState(s => clearAuction(s).state)}
               auction={auctionNow}
               auctionWithMine={auctionWithMine}

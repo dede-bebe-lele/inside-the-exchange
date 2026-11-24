@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { AuctionResult } from '../auction';
 import type { EngineState, ExecutionReport, MarketMode, MatchingRule, Order } from '../engine';
 import { usd } from '../format';
@@ -27,6 +27,10 @@ type Props = {
   onSubmit: () => void;
   onCancel: (id: number) => void;
   onRule: (r: MatchingRule) => void;
+  /** True during a challenge: the rule and mode can't change mid-game. */
+  locked?: boolean;
+  /** Shown at the top of the right column (the challenge panel). */
+  sideTop?: ReactNode;
   onMode: (m: MarketMode) => void;
   onRunAuction: () => void;
   auction: AuctionResult | null;
@@ -61,8 +65,8 @@ export function TradeView(p: Props) {
           preview={p.preview}
           onPickPrice={price => p.setTicket({ ...p.ticket, type: 'limit', price: price.toFixed(2) })}
           onCancel={p.showStory ? undefined : p.onCancel}
-          onRuleChange={p.showStory ? undefined : p.onRule}
-          onModeChange={p.showStory ? undefined : p.onMode}
+          onRuleChange={p.showStory || p.locked ? undefined : p.onRule}
+          onModeChange={p.showStory || p.locked ? undefined : p.onMode}
           auction={p.auction}
           onRunAuction={p.showStory ? undefined : p.onRunAuction}
           className="area-book"
@@ -124,6 +128,7 @@ export function TradeView(p: Props) {
         <Tape trades={p.state.trades} />
         </div>
         <div className="area-side">
+          {p.sideTop}
           {p.mission && (
             <MissionCard mission={p.mission} done={p.missionDone} state={p.state} onRestart={p.onRestartMission} onExit={p.onExitMission} onNext={p.onNextMission} />
           )}

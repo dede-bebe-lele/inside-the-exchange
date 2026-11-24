@@ -224,9 +224,9 @@ export const LESSONS: Lesson[] = [
   {
     id: 'challenge',
     number: 11,
-    title: 'Challenge: buy 200 shares cheaply',
+    title: 'Daily challenge: buy 200 shares cheaply',
     concept: 'Final challenge · Execution cost',
-    task: 'The market is live and other traders keep arriving. Buy 200 shares while paying as little as possible. Market orders are fast but cross the spread; limit orders are cheaper but you have to wait in the queue.',
+    task: 'Everyone playing today gets the exact same market and news. You have 150 market moves to buy 200 shares as cheaply as you can — whatever you still need at the end is bought at market. Then share a link: it replays your game, so your score can’t be faked.',
     takeaway:
       'Every professional trader faces this trade-off: crossing the spread now (certain, but you pay the ask and walk the book) or waiting in the queue at your price (cheaper, but you might not get filled). Your average cost shows how well you balanced them.',
     build: createInitialState,

@@ -50,7 +50,7 @@ Eleven missions with checklists that tick themselves by checking the engine's st
 - **Missions 1–8:** hand-built order books, each showing one rule.
 - **Mission 9:** a batch auction where everyone trades at one price.
 - **Mission 10:** *Be the market maker*. Quote both sides and earn the spread while news tries to pick off your old prices.
-- **Mission 11:** buy 200 shares as cheaply as you can.
+- **Mission 11, the daily challenge:** buy 200 shares as cheaply as you can in 150 market moves. Everyone playing on the same day gets *exactly* the same market, because the simulated traders and the news run from a seed (the date). Every action you take is recorded with the market tick it happened on. **Share link:** it contains only the seed and your actions, never the score, and opening it makes the engine replay the whole game and recompute the result. A score can't be faked. Real exchanges do the same: they keep a numbered journal of every message so a trading day can be replayed and audited.
 
 ### Rule Lab
 Three experiments that send thousands of rounds through the same engine:
@@ -111,10 +111,11 @@ The only fixed data is the starting order books of the missions (`src/lessons.ts
 
 ## Tests
 
-`npm test` runs 69 tests. They cover:
+`npm test` runs 75 tests. They cover:
 - **Engine:** market and limit orders, partial fills, FIFO, price priority, never trading through a limit price, conservation of shares, immutability, self-trade prevention, and pro-rata with huge sizes.
 - **Batch auction:** the clearing price, marginal-level tie-breaks, market orders, and 300 random books. On every one the auction trades the maximum possible volume and leaves the book uncrossed.
 - **Missions:** every mission's claims and task checks.
+- **Daily challenge:** the same seed gives the same market, a replay from the recorded actions reproduces the live game exactly, share links round-trip, and broken links are rejected.
 - **Rule Lab:** the learners find the true best choice, and the experiment 3 claims are checked across a grid of settings, not at one hand-picked point. Every conclusion sentence on the page is chosen by the measured numbers.
 - **Neural network:** backpropagation is checked against a numerical gradient, and the network can learn XOR. On engine data it beats the baseline, relies on queue information under price-time but not under pro-rata, and both claims are checked on two random seeds per rule.
 
@@ -131,8 +132,9 @@ The only fixed data is the starting order books of the missions (`src/lessons.ts
 | `src/bots.ts` | Simulated traders |
 | `src/lessons.ts` | Missions and their auto-checked tasks |
 | `src/nnStore.ts` | Shares the trained networks with the order ticket |
+| `src/challenge.ts` | The daily challenge: seeded market, recorded actions, replay and share links |
 | `src/format.ts` | Formatting and the plain-language explanation of each execution |
-| `src/components/` | QueueBook, Ticket, Charts, Tape, Story, BrandIntro, Splash, Tour, Term, MissionCard, Shell |
+| `src/components/` | QueueBook, Ticket, Charts, Tape, Story, BrandIntro, Splash, Tour, Term, MissionCard, ChallengeBar, Shell |
 | `src/views/` | Simulator, Missions, Rule Lab, Real market, How it works |
 
 ## Things we didn't make ourselves
