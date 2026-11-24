@@ -165,5 +165,8 @@ npm test
 npm run deploy  # test, build and publish dist/ to the gh-pages branch
 ```
 
+## What's next
+See [ROADMAP.md](ROADMAP.md): shared real-time markets, tournaments scored on trading skill, classroom rooms and paper trading on real order books.
+
 ## Licence
 MIT — see `LICENSE`.
