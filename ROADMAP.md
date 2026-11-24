@@ -8,7 +8,7 @@ Most trading games (Investopedia, MarketWatch VSE, the Stock Market Game) are ab
 ## Phase 1 — players and competitions (a few weeks)
 - **Optional accounts** (e.g. Google sign-in) to save progress in the cloud. Playing will always work without an account.
 - **One shared market in real time**: several players trade in the same order book and see each other's orders. The engine moves to a server (it is plain TypeScript, so the same code runs there), so results can't be tampered with.
-- **Tournaments with leaderboards**, scored on execution quality — e.g. "buy 200 shares cheapest", "earn the spread as a market maker for 10 minutes". The daily challenge's replay system already makes scores verifiable.
+- **Tournaments with leaderboards**, scored on execution quality — e.g. "buy 200 shares cheapest", "earn the spread as a market maker for 10 minutes". The daily challenge's replay system already recomputes every score from the moves; real tournaments would also reveal the market's seed only when the round starts, so nobody can practise it in advance.
 - **Languages**: English, Russian, Kazakh.
 
 ## Phase 2 — classrooms

@@ -3,7 +3,7 @@
 import { CheckCircle2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { clearAuction, setMode } from './auction';
-import { applyAction, CHALLENGE_TICKS, decodeRun, encodeRun, finishSim, reachedTarget, replay, startSim, stepSim, todaysSeed, type Action, type ActionInput, type Sim } from './challenge';
+import { applyAction, CHALLENGE_TICKS, decodeRun, encodeRun, finishSim, reachedTarget, replay, startSim, tickChallenge, todaysSeed, type Action, type ActionInput, type Sim } from './challenge';
 import { ChallengeBar, type ChallengeView } from './components/ChallengeBar';
 import { botStep, replayRng } from './bots';
 import { makeNews, NEWS_CHANCE, type NewsItem } from './news';
@@ -86,6 +86,7 @@ export default function App() {
   // The fair challenge: the market is driven by a seed, and every action is recorded with its tick.
   type Run = ChallengeView & { actions: Action[]; replayOf?: { actions: Action[]; end: number } };
   const [run, setRunState] = useState<Run | null>(null);
+  const watchingReplay = !!run?.replayOf && !run.result;
   const runRef = useRef<Run | null>(null);
   const sim = useRef<Sim | null>(null);
   const setRun = (r: Run | null) => {
@@ -222,15 +223,11 @@ export default function App() {
       // During a challenge (or a replay of one) the market is driven by the seed, not Math.random.
       const r = runRef.current;
       if (r && !r.result && sim.current) {
-        let s = sim.current;
-        if (r.replayOf) for (const a of r.replayOf.actions.filter(x => x.t === s.tick)) s = applyAction(s, a);
-        const end = r.replayOf ? r.replayOf.end : CHALLENGE_TICKS;
-        if (s.tick >= end || reachedTarget(s)) return endChallenge(s, r);
-        s = stepSim(s, r.seed);
-        showSim(s);
-        const next = { ...r, tick: s.tick };
-        setRun(next);
-        if (!r.replayOf && (s.tick >= CHALLENGE_TICKS || reachedTarget(s))) endChallenge(s, next);
+        // Exactly the function replay() uses — so the live game and its replay can't differ.
+        const step = tickChallenge(sim.current, r.seed, r.replayOf?.actions ?? [], r.replayOf?.end ?? CHALLENGE_TICKS);
+        if (step.ended) return endChallenge(step.sim, r);
+        showSim(step.sim);
+        setRun({ ...r, tick: step.sim.tick });
         return;
       }
       // Random numbers are drawn here, outside the updater, so the updater stays pure.
@@ -243,9 +240,9 @@ export default function App() {
       }
       const f = fair.current;
       setState(s => (s.mode === 'batch' && auctionTurn ? clearAuction(s).state : botStep(s, replayRng(draws), f)));
-    }, SPEEDS[speed] ?? 850);
+    }, watchingReplay ? 120 : (SPEEDS[speed] ?? 850));
     return () => window.clearInterval(timer);
-  }, [botsOn, speed]);
+  }, [botsOn, speed, watchingReplay]);
 
   // --- missions: tick tasks off whenever the engine state changes ---
   useEffect(() => {
@@ -307,19 +304,31 @@ export default function App() {
     go('trade');
   };
 
-  // Opening a shared link (#/replay?c=…) replays that game on the same market.
-  useEffect(() => {
+  // Opening a shared link (#/replay?c=…) replays that game on the same market —
+  // on first load, or when a link is pasted into the address bar of an open tab.
+  const openReplayRef = useRef<() => void>(() => {});
+  openReplayRef.current = () => {
     const m = window.location.hash.match(/^#\/replay\?c=([\w-]+)/);
     if (!m) return;
+    window.history.replaceState(null, '', '#/trade');
+    setView('trade');
     const decoded = decodeRun(m[1]);
     if (!decoded) return setToast('That replay link is broken.');
+    setMission(null);
     setShowSplash(false);
     setShowStory(false);
-    setSpeed('fast');
     startChallenge(decoded.seed, { actions: decoded.actions, end: decoded.end });
-    window.history.replaceState(null, '', '#/trade');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  };
+  useEffect(() => {
+    openReplayRef.current();
+    const onHash = () => openReplayRef.current();
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
   }, []);
+  // Leaving the simulator pauses a running challenge, so its clock can't run out unseen.
+  useEffect(() => {
+    if (view !== 'trade' && runRef.current && !runRef.current.result) setBotsOn(false);
+  }, [view]);
   const closeStory = () => {
     setShowStory(false);
     save('story-closed', true);
@@ -345,6 +354,7 @@ export default function App() {
         dark={document.documentElement.dataset.theme === 'dark'}
         onToggleTheme={() => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark')}
         onReplayIntro={() => {
+          setRun(null);
           setMission(null);
           setBotsOn(false);
           setShowOpening(true);
@@ -365,7 +375,7 @@ export default function App() {
               onToggleBots={() => setBotsOn(b => !b)}
               onSpeed={setSpeed}
               onReset={reset}
-              locked={showStory || (!!run && !run.result)}
+              locked={showStory}
             />
             <TradeView
               state={state}

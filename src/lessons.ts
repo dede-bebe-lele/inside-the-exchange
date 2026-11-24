@@ -2,6 +2,7 @@
 // demonstrates exactly one concept of the matching engine, and lists tasks that the
 // app ticks off by checking the engine's real state and execution reports.
 import { setMode } from './auction';
+import { CHALLENGE_TICKS, replay, todaysSeed } from './challenge';
 import { createInitialState, portfolioValue, STARTING_CASH, stateFromBook, submitOrder, type EngineState, type ExecutionReport, type OrderType, type Side } from './engine';
 
 /** What a task can look at: the current book and the user's orders since the mission started. */
@@ -10,6 +11,14 @@ export type MissionContext = { state: EngineState; reports: ExecutionReport[] };
 export type Task = { id: string; text: string; check: (ctx: MissionContext) => boolean };
 
 const prices = (r: ExecutionReport) => new Set(r.fills.map(f => f.price));
+
+/** Today's bar to beat: do nothing, then buy all 200 at the deadline (computed once per day). */
+let doNothing: { seed: number; cost: number } | null = null;
+export function doNothingCost(): number {
+  const seed = todaysSeed();
+  if (!doNothing || doNothing.seed !== seed) doNothing = { seed, cost: replay(seed, [], CHALLENGE_TICKS).result.avgCost };
+  return doNothing.cost;
+}
 
 /** Average price the user paid per share bought (kept in the portfolio, so it never forgets). */
 export function averageCost(state: EngineState): number | null {
@@ -233,9 +242,9 @@ export const LESSONS: Lesson[] = [
     order: { side: 'buy', type: 'limit', quantity: 50, price: 100 },
     liveMarket: true,
     tasks: [
-      { id: 'own', text: 'Own at least 200 shares', check: ({ state }) => state.portfolio.shares >= 200 },
-      { id: 'good', text: 'Average cost below $100.15', check: ({ state }) => state.portfolio.shares >= 200 && (averageCost(state) ?? Infinity) < 100.15 },
-      { id: 'great', text: 'Average cost below $100.05 (needs patient limits)', check: ({ state }) => state.portfolio.shares >= 200 && (averageCost(state) ?? Infinity) < 100.05 },
+      { id: 'own', text: 'Finish with 200 shares', check: ({ state }) => state.portfolio.shares >= 200 },
+      { id: 'good', text: 'Beat doing nothing (waiting, then buying all 200 at the deadline)', check: ({ state }) => state.portfolio.shares >= 200 && (averageCost(state) ?? Infinity) < doNothingCost() },
+      { id: 'great', text: 'Beat it by 5¢ a share', check: ({ state }) => state.portfolio.shares >= 200 && (averageCost(state) ?? Infinity) < doNothingCost() - 0.05 },
     ],
   },
 ];

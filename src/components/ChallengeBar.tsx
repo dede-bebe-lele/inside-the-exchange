@@ -1,6 +1,6 @@
 import { Copy, Eye, Flag, RotateCcw, ShieldCheck, Timer } from 'lucide-react';
 import { useState } from 'react';
-import { CHALLENGE_TICKS, TARGET, type ChallengeResult } from '../challenge';
+import { CHALLENGE_TICKS, TARGET, todaysSeed, type ChallengeResult } from '../challenge';
 import type { EngineState } from '../engine';
 import { usd } from '../format';
 import { averageCost } from '../lessons';
@@ -35,7 +35,7 @@ export function ChallengeBar({ run, state, onFinish, onWatch, onPlayAgain }: Pro
     <section className="card challenge" aria-label="Challenge">
       <div className="challenge-head">
         <span className="eyebrow">
-          {run.watching ? <Eye size={12} /> : <Flag size={12} />} {run.watching ? 'Replay of a shared game' : `Daily challenge #${run.seed}`}
+          {run.watching ? <Eye size={12} /> : <Flag size={12} />} {run.watching ? `Replay · challenge #${run.seed}${run.seed !== todaysSeed() ? ' (not today’s market)' : ''}` : `Daily challenge #${run.seed}`}
         </span>
         <span className="mono muted">
           <Timer size={12} /> {Math.min(run.tick, CHALLENGE_TICKS)}/{CHALLENGE_TICKS}
@@ -87,7 +87,7 @@ export function ChallengeBar({ run, state, onFinish, onWatch, onPlayAgain }: Pro
           </div>
           {run.watching && (
             <p className="verified">
-              <ShieldCheck size={14} /> Recomputed from the seed and {run.result.actions} recorded action{run.result.actions === 1 ? '' : 's'} — the link doesn’t contain a score, so it can’t be faked.
+              <ShieldCheck size={14} /> Recomputed by our engine from the seed and {run.result.actions} recorded action{run.result.actions === 1 ? '' : 's'}. The link holds no score, so it can’t claim one its moves didn’t earn.
             </p>
           )}
           <div className="mission-actions">

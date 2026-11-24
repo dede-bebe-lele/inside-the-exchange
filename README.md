@@ -50,7 +50,7 @@ Eleven missions with checklists that tick themselves by checking the engine's st
 - **Missions 1–8:** hand-built order books, each showing one rule.
 - **Mission 9:** a batch auction where everyone trades at one price.
 - **Mission 10:** *Be the market maker*. Quote both sides and earn the spread while news tries to pick off your old prices.
-- **Mission 11, the daily challenge:** buy 200 shares as cheaply as you can in 150 market moves. Everyone playing on the same day gets *exactly* the same market, because the simulated traders and the news run from a seed (the date). Every action you take is recorded with the market tick it happened on. **Share link:** it contains only the seed and your actions, never the score, and opening it makes the engine replay the whole game and recompute the result. A score can't be faked. Real exchanges do the same: they keep a numbered journal of every message so a trading day can be replayed and audited.
+- **Mission 11, the daily challenge:** buy 200 shares as cheaply as you can in 150 market moves. Everyone playing on the same day gets *exactly* the same market, because the simulated traders and the news run from a seed (the date). Every action you take is recorded with the market tick it happened on. **Share link:** it contains only the seed and your actions, never the score, and opening it makes the engine replay the whole game and recompute the result. So a link can't claim a score its moves didn't earn. (Because the day's market is the same for everyone, a second try has foresight; real tournaments would reveal the seed only at the start.) Real exchanges do the same: they keep a numbered journal of every message so a trading day can be replayed and audited.
 
 ### Rule Lab
 Three experiments that send thousands of rounds through the same engine:
@@ -111,7 +111,7 @@ The only fixed data is the starting order books of the missions (`src/lessons.ts
 
 ## Tests
 
-`npm test` runs 75 tests. They cover:
+`npm test` runs 77 tests. They cover:
 - **Engine:** market and limit orders, partial fills, FIFO, price priority, never trading through a limit price, conservation of shares, immutability, self-trade prevention, and pro-rata with huge sizes.
 - **Batch auction:** the clearing price, marginal-level tie-breaks, market orders, and 300 random books. On every one the auction trades the maximum possible volume and leaves the book uncrossed.
 - **Missions:** every mission's claims and task checks.
@@ -128,7 +128,7 @@ The only fixed data is the starting order books of the missions (`src/lessons.ts
 | `src/lab.ts` | Rule Lab models (queue race, news race, multi-agent market) and the learners |
 | `src/neural.ts` | Experiment 4: data generation, the neural network, backpropagation, permutation importance |
 | `src/news.ts` | Made-up ACME headlines that move the simulated fair value |
-| `src/realMarket.ts` | Loads the live BTC book (Coinbase, then Kraken) into engine state |
+| `src/realMarket.ts` | Loads the live BTC book (Kraken, then Coinbase) into engine state |
 | `src/bots.ts` | Simulated traders |
 | `src/lessons.ts` | Missions and their auto-checked tasks |
 | `src/nnStore.ts` | Shares the trained networks with the order ticket |

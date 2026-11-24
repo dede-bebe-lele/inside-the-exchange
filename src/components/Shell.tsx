@@ -92,7 +92,7 @@ type TopBarProps = {
   onToggleBots: () => void;
   onSpeed: (s: string) => void;
   onReset: () => void;
-  /** Hide the market controls (used while the first-visit story runs). */
+  /** Hide the market controls while the first-visit story runs (during a challenge they stay: pausing is fair, scores count ticks, not seconds). */
   locked?: boolean;
 };
 

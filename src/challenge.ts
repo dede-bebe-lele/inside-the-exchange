@@ -4,12 +4,13 @@
 // traders and the news are driven by a seeded random generator, one seed per day.
 // We record every action you take and the market "tick" it happened on. Because the
 // engine is deterministic, anyone can replay your actions from the seed and get exactly
-// the same result — so a shared score can't be faked.
+// the same result — so a link can't claim a score its moves didn't earn: the score is
+// always recomputed from them.
 //
 // Real exchanges do the same thing: they keep a numbered journal of every message they
 // receive, so a whole trading day can be replayed and audited.
 import { botStep } from './bots';
-import { cancelOrder, createInitialState, executeOrder, type EngineState, type OrderType, type Side } from './engine';
+import { cancelOrder, createInitialState, executeOrder, validateOrder, type EngineState, type OrderType, type Side } from './engine';
 import { seeded } from './lab';
 import { makeNews, NEWS_CHANCE, type NewsItem } from './news';
 
@@ -48,10 +49,13 @@ export function stepSim(sim: Sim, seed: number): Sim {
   return { state: botStep(sim.state, rng, fair), fair, news, tick: sim.tick + 1 };
 }
 
-/** Apply one of the player's actions to the market. */
+/** Apply one of the player's actions to the market. A player may only cancel their OWN orders. */
 export function applyAction(sim: Sim, a: Action): Sim {
-  const state = a.kind === 'cancel' ? cancelOrder(sim.state, a.id) : executeOrder(sim.state, a.side, a.type, a.qty, a.price, 'you').state;
-  return { ...sim, state };
+  if (a.kind === 'cancel') {
+    const mine = [...sim.state.bids, ...sim.state.asks].some(o => o.id === a.id && o.owner === 'you');
+    return mine ? { ...sim, state: cancelOrder(sim.state, a.id) } : sim;
+  }
+  return { ...sim, state: executeOrder(sim.state, a.side, a.type, a.qty, a.price, 'you').state };
 }
 
 /**
@@ -81,15 +85,27 @@ export function finishSim(sim: Sim): { sim: Sim; result: ChallengeResult } {
 export const reachedTarget = (sim: Sim) => sim.state.portfolio.shares >= TARGET;
 
 /**
+ * One tick of a game. The SAME function drives the live game in the app (with no scheduled
+ * actions — the player's clicks are applied as they happen) and every replay (with the
+ * recorded actions). First apply the actions scheduled for this tick, then either stop
+ * (time is up or the target is reached) or let the market move one step.
+ */
+export function tickChallenge(sim: Sim, seed: number, scheduled: Action[], end: number): { sim: Sim; ended: boolean } {
+  for (const a of scheduled.filter(x => x.t === sim.tick)) sim = applyAction(sim, a);
+  if (sim.tick >= end || reachedTarget(sim)) return { sim, ended: true };
+  return { sim: stepSim(sim, seed), ended: false };
+}
+
+/**
  * Replay a whole challenge from its seed, the player's actions and the tick it ended on.
  * Actions with t = k are applied after k market ticks — exactly when the player clicked.
  */
 export function replay(seed: number, actions: Action[], end: number): { sim: Sim; result: ChallengeResult } {
   let sim = startSim();
-  while (true) {
-    for (const a of actions.filter(x => x.t === sim.tick)) sim = applyAction(sim, a);
-    if (sim.tick >= end || reachedTarget(sim)) break;
-    sim = stepSim(sim, seed);
+  for (;;) {
+    const r = tickChallenge(sim, seed, actions, end);
+    sim = r.sim;
+    if (r.ended) break;
   }
   const done = finishSim(sim);
   return { sim: done.sim, result: { ...done.result, actions: actions.length } };
@@ -113,10 +129,20 @@ export function decodeRun(code: string): { seed: number; actions: Action[]; end:
     const json = atob(code.replace(/-/g, '+').replace(/_/g, '/'));
     const p = JSON.parse(json) as Packed;
     if (typeof p.s !== 'number' || typeof p.e !== 'number' || !Array.isArray(p.a) || p.e < 0 || p.e > CHALLENGE_TICKS) return null;
+    if (!Number.isInteger(p.s) || !Number.isInteger(p.e)) return null;
     const actions: Action[] = p.a.map(row => {
       const [t, k, x, y] = row as [number, string, number, number];
-      if (k === 'c') return { t, kind: 'cancel', id: x };
-      return { t, kind: 'order', side: k[0] === 'b' ? 'buy' : 'sell', type: k[1] === 'l' ? 'limit' : 'market', qty: x, price: k[1] === 'l' ? y : undefined };
+      // Reject anything a real game could never have produced.
+      if (!Number.isInteger(t) || t < 0 || t > p.e) throw new Error('bad tick');
+      if (k === 'c') {
+        if (!Number.isInteger(x)) throw new Error('bad id');
+        return { t, kind: 'cancel', id: x };
+      }
+      if (!['bl', 'bm', 'sl', 'sm'].includes(k)) throw new Error('bad action');
+      const type = k[1] === 'l' ? 'limit' : 'market';
+      const price = type === 'limit' ? y : undefined;
+      if (validateOrder(type, x, price) !== null) throw new Error('bad order');
+      return { t, kind: 'order', side: k[0] === 'b' ? 'buy' : 'sell', type, qty: x, price };
     });
     return { seed: p.s, actions, end: p.e };
   } catch {

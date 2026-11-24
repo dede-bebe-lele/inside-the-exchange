@@ -64,4 +64,22 @@ describe('fair challenge', () => {
   it("today's seed is the date as a number", () => {
     expect(todaysSeed(new Date(2026, 10, 25))).toBe(20261125);
   });
+
+  it('a forged link that cancels other traders’ orders gains nothing: only your own orders can be cancelled', () => {
+    const honest: Action[] = [{ t: 0, kind: 'order', side: 'buy', type: 'limit', qty: 200, price: 99.7 }];
+    const start = startSim();
+    const botIds = [...start.state.bids, ...start.state.asks].map(o => o.id);
+    const forged: Action[] = [...honest, ...botIds.map(id => ({ t: 0, kind: 'cancel' as const, id }))];
+    expect(replay(9, forged, CHALLENGE_TICKS).result.avgCost).toBe(replay(9, honest, CHALLENGE_TICKS).result.avgCost);
+  });
+
+  it('rejects links with impossible actions (negative size, fractional or out-of-range ticks, unknown kinds)', () => {
+    const enc = (o: unknown) => btoa(JSON.stringify(o));
+    expect(decodeRun(enc({ s: 1, e: 10, a: [[3, 'bm', -5, 0]] }))).toBeNull();
+    expect(decodeRun(enc({ s: 1, e: 10, a: [[2.5, 'bm', 5, 0]] }))).toBeNull();
+    expect(decodeRun(enc({ s: 1, e: 10, a: [[11, 'bm', 5, 0]] }))).toBeNull();
+    expect(decodeRun(enc({ s: 1, e: 10, a: [[1, 'xx', 5, 0]] }))).toBeNull();
+    expect(decodeRun(enc({ s: 1, e: 10, a: [[1, 'bl', 5, 100.123]] }))).toBeNull();
+    expect(decodeRun(enc({ s: 1, e: 10, a: [[1, 'bl', 5, 100.12]] }))).not.toBeNull();
+  });
 });
